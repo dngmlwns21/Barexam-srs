@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>변호사시험 SRS</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="loading-screen" id="loading-screen">
+      <div class="spinner"></div>
+      <p>로딩 중…</p>
+    </div>
+
+    <div class="login-screen" id="login-screen" hidden>
+      <div class="login-card">
+        <h1>⚖️ 변호사시험 SRS</h1>
+        <div class="tabs">
+          <button class="tab-btn active" id="tab-login" type="button">로그인</button>
+          <button class="tab-btn" id="tab-register" type="button">회원가입</button>
+        </div>
+        <form class="auth-form" id="auth-form">
+          <div class="form-group">
+            <label for="auth-email">이메일</label>
+            <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" required />
+          </div>
+          <div class="form-group" id="name-group" hidden>
+            <label for="auth-name">이름 (선택)</label>
+            <input type="text" id="auth-name" placeholder="홍길동" autocomplete="name" />
+          </div>
+          <div class="form-group">
+            <label for="auth-password">비밀번호</label>
+            <input type="password" id="auth-password" placeholder="8자 이상" autocomplete="current-password" required />
+          </div>
+          <div class="auth-error" id="auth-error"></div>
+          <button type="submit" class="btn-auth" id="btn-auth-submit">로그인</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="dynamic-screen"></div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Environment
+.env
+phase4_api/.env
+
+# Data files (large / sensitive)
+data/*.json
+data/*.db
+data/*.backup.json
+
+# Downloaded exam files
+downloads/
+
+# Claude Code internal
+.claude/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

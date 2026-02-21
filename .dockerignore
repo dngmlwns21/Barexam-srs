@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+phase4_api/.env
+data/*.json
+data/*.db
+.git/
+node_modules/
+*.backup.json
+.venv/
+venv/
