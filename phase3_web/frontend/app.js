@@ -87,6 +87,7 @@ const S = {
   screen:         'login',  // 'login' | 'home' | 'studylist' | 'study' | 'result' | 'done' | 'mypage'
   activeTab:      'home',   // 'home' | 'study' | 'mypage'
   myPageTab:      'stats',  // 'stats' | 'history' | 'bookmarks'
+  returnTo:       null,     // null | 'mypage' — where to go after single-card restudy
   subjects:       [],       // SubjectOut[]
   stats:          null,     // OverallStatsOut
   subjectStats:   [],       // SubjectStatsOut[]
@@ -446,8 +447,31 @@ function renderStudyList() {
 
 // ── STUDY ─────────────────────────────────────────────────────────────────────
 async function startStudy() {
+  S.returnTo    = null;
   S.sessionDone = 0;
   await fetchNextCard();
+}
+
+async function studySpecificCard(flashcardId) {
+  S.returnTo = 'mypage';
+  hideBottomNav();
+  showLoading();
+  document.getElementById('login-screen').hidden = true;
+  try {
+    const card = await api.get(`/flashcards/${flashcardId}`);
+    S.card       = card;
+    S.chosen     = null;
+    S.revealData = null;
+    S.peerStats  = null;
+    S.screen     = 'study';
+    hideLoading();
+    renderStudy();
+  } catch(e) {
+    console.error(e);
+    hideLoading();
+    showBottomNav();
+    setActiveTab('mypage');
+  }
 }
 
 async function fetchNextCard() {
@@ -549,7 +573,8 @@ function renderStudy() {
     </div>
   `;
 
-  document.getElementById('btn-back').addEventListener('click', showHome);
+  document.getElementById('btn-back').addEventListener('click',
+    S.returnTo === 'mypage' ? () => showMyPage('history') : showHome);
   document.getElementById('btn-star').addEventListener('click', () => toggleStar(q.id, card.is_starred));
 
   if (isOX) {
@@ -776,7 +801,8 @@ function renderResult() {
     </div>
   `;
 
-  document.getElementById('btn-back').addEventListener('click', showHome);
+  document.getElementById('btn-back').addEventListener('click',
+    S.returnTo === 'mypage' ? () => showMyPage('history') : showHome);
   document.getElementById('btn-star').addEventListener('click', () => toggleStar(q.id, card.is_starred));
   document.getElementById('btn-save-note').addEventListener('click', () => saveNote(q.id));
   document.querySelectorAll('.btn-rating').forEach(btn => {
@@ -840,7 +866,12 @@ async function submitRating(rating) {
   }
 
   S.sessionDone++;
-  await fetchNextCard();
+  if (S.returnTo === 'mypage') {
+    S.returnTo = null;
+    await showMyPage('history');
+  } else {
+    await fetchNextCard();
+  }
 }
 
 // ── DONE ──────────────────────────────────────────────────────────────────────
@@ -995,16 +1026,17 @@ function renderMyPage(data) {
             ? '<span class="review-badge review-badge-ox">O/X</span>'
             : '<span class="review-badge review-badge-mcq">MCQ</span>';
           const dots  = '●'.repeat(Math.min(log.rating, 5)) + '○'.repeat(5 - Math.min(log.rating, 5));
-          return `<div class="review-item">
+          return `<div class="review-item" data-flashcard-id="${esc(log.flashcard_id)}">
             ${badge}
             <div class="review-stem">${esc(stem || '(문제 정보 없음)')}</div>
             <div class="review-meta">
               <span class="review-correct ${log.was_correct ? 'correct' : 'wrong'}">${log.was_correct ? '✓' : '✗'}</span>
               <span class="review-rating">${dots}</span>
               <span class="review-time">${relTime(log.reviewed_at)}</span>
+              <button class="btn-restudy" data-flashcard-id="${esc(log.flashcard_id)}">▶ 다시</button>
             </div></div>`;
         }).join('');
-    contentHtml = `<div class="review-list">${itemsHtml}</div>`;
+    contentHtml = `<div class="review-list" id="review-list-container">${itemsHtml}</div>`;
   } else {
     const user       = data.user || {};
     const isDark     = document.body.classList.contains('dark-mode');
@@ -1056,6 +1088,12 @@ function renderMyPage(data) {
 
   document.querySelectorAll('.mypage-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => showMyPage(btn.dataset.tab));
+  });
+
+  // 오답노트 "다시 풀기" buttons
+  document.getElementById('review-list-container')?.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-restudy');
+    if (btn) studySpecificCard(btn.dataset.flashcardId);
   });
 
   if (tab === 'bookmarks') {

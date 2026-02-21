@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -86,3 +86,53 @@ async def get_due_cards(
         )
 
     return out
+
+
+@router.get("/{flashcard_id}", response_model=DueCardOut)
+async def get_flashcard(
+    flashcard_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return a single flashcard by ID regardless of due status (for on-demand re-study)."""
+    stmt = (
+        select(UserProgress)
+        .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
+        .options(
+            selectinload(UserProgress.flashcard)
+            .selectinload(Flashcard.question)
+            .selectinload(Question.choices),
+            selectinload(UserProgress.flashcard)
+            .selectinload(Flashcard.choice),
+        )
+        .where(
+            UserProgress.user_id == current_user.id,
+            UserProgress.flashcard_id == flashcard_id,
+        )
+    )
+    result = await db.execute(stmt)
+    up = result.scalar_one_or_none()
+    if not up:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Flashcard not found")
+
+    fc = up.flashcard
+    q  = fc.question
+
+    sm2_out = SM2StateOut(
+        ease_factor=float(up.ease_factor),
+        interval_days=float(up.interval_days),
+        repetitions=up.repetitions,
+        next_review_at=up.next_review_at,
+        last_reviewed_at=up.last_reviewed_at,
+        last_rating=up.last_rating,
+    )
+
+    return DueCardOut(
+        flashcard_id=fc.id,
+        type=fc.type,
+        question=QuestionOut.model_validate(q),
+        choice=ChoiceOut.model_validate(fc.choice) if fc.choice else None,
+        sm2=sm2_out,
+        personal_note=up.personal_note,
+        is_starred=up.is_starred,
+    )

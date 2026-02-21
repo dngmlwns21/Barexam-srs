@@ -122,12 +122,6 @@ async def submit_review(
         vacation_started_at=current_user.vacation_started_at,
     )
 
-    # "Again" cards (rating <= 1) must re-appear immediately in the same session.
-    # We keep interval_days=10min in the SM-2 state for future scheduling,
-    # but set next_review_at=now so the card is immediately due again.
-    if body.rating <= 1:
-        new_due = now
-
     # Apply to UserProgress
     now = datetime.now(timezone.utc)
     up.ease_factor      = new_state.ease_factor

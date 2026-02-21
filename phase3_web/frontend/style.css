@@ -1399,3 +1399,21 @@ body.dark-mode .login-card { background: var(--card); }
 }
 .toggle-switch input:checked + .toggle-track { background: var(--primary); }
 .toggle-switch input:checked + .toggle-track::after { transform: translateX(20px); }
+
+/* ── Re-study button (오답노트) ──────────────────────────────────────────────── */
+.btn-restudy {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  color: var(--primary);
+  font-size: .68rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .12s, color .12s;
+  white-space: nowrap;
+}
+.btn-restudy:hover { background: var(--primary); color: #fff; }
