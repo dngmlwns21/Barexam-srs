@@ -22,6 +22,8 @@ def _clean_url(url: str) -> str:
 
 
 _ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
 
 engine = create_async_engine(
     _clean_url(settings.database_url),
