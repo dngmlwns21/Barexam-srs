@@ -84,7 +84,9 @@ const api = {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
-  screen:         'login',  // 'login' | 'home' | 'study' | 'result' | 'done'
+  screen:         'login',  // 'login' | 'home' | 'studylist' | 'study' | 'result' | 'done' | 'mypage'
+  activeTab:      'home',   // 'home' | 'study' | 'mypage'
+  myPageTab:      'stats',  // 'stats' | 'history' | 'bookmarks'
   subjects:       [],       // SubjectOut[]
   stats:          null,     // OverallStatsOut
   subjectStats:   [],       // SubjectStatsOut[]
@@ -164,11 +166,28 @@ function hideLoading() {
   document.getElementById('loading-screen').hidden = true;
 }
 
+// ── Bottom nav helpers ────────────────────────────────────────────────────────
+function showBottomNav() {
+  document.getElementById('bottom-nav').hidden = false;
+}
+
+function hideBottomNav() {
+  document.getElementById('bottom-nav').hidden = true;
+}
+
+function setActiveTab(tab) {
+  S.activeTab = tab;
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+}
+
 // ── LOGIN / REGISTER ──────────────────────────────────────────────────────────
 let _authMode = 'login'; // 'login' | 'register'
 
 function showLogin() {
   S.screen = 'login';
+  hideBottomNav();
   document.getElementById('login-screen').hidden   = false;
   document.getElementById('dynamic-screen').innerHTML = '';
   document.getElementById('loading-screen').hidden = true;
@@ -274,113 +293,155 @@ ${esc(err.message)}</pre>
     return;
   }
 
+  showBottomNav();
+  setActiveTab('home');
   hideLoading();
   renderHome();
 }
 
 function renderHome() {
-  const { stats, subjects, subjectStats, activeSubjectId, streak } = S;
-
-  // Find stats for the active subject (or overall)
-  let dueCount;
-  if (activeSubjectId) {
-    const ss = subjectStats.find(s => s.subject_id === activeSubjectId);
-    dueCount = ss ? ss.due : 0;
-  } else {
-    dueCount = stats.due_today;
-  }
+  const { stats, streak } = S;
+  const total    = stats.due_today + stats.reviewed_today;
+  const pct      = total > 0 ? Math.round((stats.reviewed_today / total) * 100) : 0;
+  const dueCount = stats.due_today;
 
   const dynEl = document.getElementById('dynamic-screen');
   dynEl.innerHTML = `
-    <div class="home">
-      <div class="home-header-row">
-        <div>
-          <h1 style="font-size:2rem;font-weight:800;color:var(--primary);letter-spacing:-0.5px;">⚖️ 변호사시험 SRS</h1>
-          <p class="subtitle" style="margin-top:4px;color:var(--text-muted);font-size:.9rem;">
-            SM-2 스페이스드 리피티션 · ${stats.total_cards.toLocaleString()}카드
-          </p>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          ${streak > 0 ? `<div class="streak-badge">🔥 ${streak}일 연속</div>` : ''}
+    <div class="home-v2">
+      <div class="home-topbar">
+        <span class="home-topbar-title">⚖️ 변호사시험 SRS</span>
+        <div class="home-topbar-actions">
           <button class="btn-dark-toggle" id="btn-dark-toggle-home" title="다크 모드">
             ${document.body.classList.contains('dark-mode') ? '🌙' : '☀️'}
           </button>
-          <button class="btn-my-page" id="btn-my-page">내 기록</button>
           <button class="btn-logout" id="btn-logout">로그아웃</button>
         </div>
       </div>
 
-      <div class="stats-grid">
-        <div class="stat-card stat-new">
-          <div class="stat-num">${stats.due_today.toLocaleString()}</div>
-          <div class="stat-label">오늘 복습</div>
+      <div class="hero-card">
+        <div class="hero-streak-label">연속 학습</div>
+        <div class="hero-streak-value">${streak > 0 ? `🔥 ${streak}일 연속` : '오늘 시작해요!'}</div>
+        <div class="hero-daily-label">
+          <span>오늘 진도</span>
+          <span>${stats.reviewed_today} / ${total || stats.total_cards} 완료</span>
         </div>
-        <div class="stat-card stat-due">
-          <div class="stat-num">${stats.reviewed_today.toLocaleString()}</div>
-          <div class="stat-label">오늘 완료</div>
-        </div>
-        <div class="stat-card stat-done">
-          <div class="stat-num">${stats.correct_today.toLocaleString()}</div>
-          <div class="stat-label">정답</div>
-        </div>
-        <div class="stat-card stat-total">
-          <div class="stat-num">${stats.accuracy_7d.toFixed(1)}%</div>
-          <div class="stat-label">7일 정확도</div>
+        <div class="hero-progress-bar">
+          <div class="hero-progress-fill" style="width:${pct}%"></div>
         </div>
       </div>
 
-      <div class="subjects">
-        <div class="subjects-label">과목 선택</div>
-        <div class="subject-list">
-          <button class="subject-card ${!activeSubjectId ? 'active' : ''}" data-id="">
-            <div class="subject-card-name">전체</div>
-            <div class="subject-card-stats">
-              <span class="subject-card-due${stats.due_today > 0 ? ' has-due' : ''}">
-                ${stats.due_today.toLocaleString()} 예정
-              </span>
-              <span class="subject-card-total">${stats.total_cards.toLocaleString()} 카드</span>
-            </div>
-          </button>
-          ${subjects.map(s => {
-            const ss = subjectStats.find(x => x.subject_id === s.id);
-            const due = ss ? ss.due : 0;
-            const total = s.total_questions || 0;
-            return `
-              <button class="subject-card ${activeSubjectId === s.id ? 'active' : ''}" data-id="${esc(s.id)}">
-                <div class="subject-card-name">${esc(s.name)}</div>
-                <div class="subject-card-stats">
-                  <span class="subject-card-due${due > 0 ? ' has-due' : ''}">
-                    ${due.toLocaleString()} 예정
-                  </span>
-                  <span class="subject-card-total">${total.toLocaleString()} 카드</span>
-                </div>
-              </button>
-            `;
-          }).join('')}
-        </div>
-      </div>
-
-      <button class="btn-start${dueCount === 0 ? ' disabled' : ''}"
-              id="btn-start" ${dueCount === 0 ? 'disabled' : ''}>
-        ${dueCount === 0
-          ? '✓ 오늘 학습 완료!'
-          : `학습 시작 (${dueCount.toLocaleString()}장)`}
+      <button class="btn-cta${dueCount === 0 ? ' disabled' : ''}" id="btn-cta" ${dueCount === 0 ? 'disabled' : ''}>
+        ${dueCount === 0 ? '✓ 오늘 학습 완료!' : `이어서 학습하기 (${dueCount.toLocaleString()}장)`}
       </button>
+
+      <div class="stats-strip">
+        <div class="stats-strip-card s-due">
+          <div class="stats-strip-num">${stats.due_today.toLocaleString()}</div>
+          <div class="stats-strip-lbl">예정</div>
+        </div>
+        <div class="stats-strip-card s-done">
+          <div class="stats-strip-num">${stats.reviewed_today.toLocaleString()}</div>
+          <div class="stats-strip-lbl">완료</div>
+        </div>
+        <div class="stats-strip-card s-correct">
+          <div class="stats-strip-num">${stats.correct_today.toLocaleString()}</div>
+          <div class="stats-strip-lbl">정답</div>
+        </div>
+        <div class="stats-strip-card s-acc">
+          <div class="stats-strip-num">${stats.accuracy_7d.toFixed(1)}%</div>
+          <div class="stats-strip-lbl">7일 정확도</div>
+        </div>
+      </div>
     </div>
   `;
 
   document.getElementById('btn-logout').addEventListener('click', logout);
   document.getElementById('btn-dark-toggle-home').addEventListener('click', toggleDarkMode);
-  document.getElementById('btn-my-page').addEventListener('click', showMyPage);
+  document.getElementById('btn-cta')?.addEventListener('click', () => {
+    S.activeSubjectId = null;
+    startStudy();
+  });
+}
 
-  document.querySelectorAll('.subject-card').forEach(btn => {
-    btn.addEventListener('click', async () => {
+// ── STUDY LIST ────────────────────────────────────────────────────────────────
+async function showStudyList() {
+  S.screen = 'studylist';
+  showBottomNav();
+  setActiveTab('study');
+  showLoading();
+  document.getElementById('login-screen').hidden = true;
+
+  try {
+    const [stats, subjStats, subjects] = await Promise.all([
+      api.get('/stats/'),
+      api.get('/stats/subjects'),
+      api.get('/subjects/'),
+    ]);
+    S.stats        = stats;
+    S.subjectStats = subjStats;
+    S.subjects     = subjects;
+    S.streak       = stats.study_streak;
+  } catch(e) {
+    console.error(e);
+    hideLoading();
+    return;
+  }
+  hideLoading();
+  renderStudyList();
+}
+
+function renderStudyList() {
+  const { subjects, subjectStats, stats } = S;
+
+  function makeCard(id, name, due, total, reviewed) {
+    const todayDone  = due + reviewed > 0 ? reviewed : 0;
+    const todayTotal = due + reviewed;
+    const pct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : (due === 0 ? 100 : 0);
+    return `
+      <button class="subject-card-v2" data-id="${esc(id)}">
+        <div class="subject-card-v2-top">
+          <div class="subject-card-v2-name">${esc(name)}</div>
+          <div class="subject-card-v2-badge ${due > 0 ? 'has-due' : 'no-due'}">
+            ${due > 0 ? `${due.toLocaleString()} 예정` : '완료'}
+          </div>
+        </div>
+        <div class="subject-progress">
+          <div class="subject-progress-fill" style="width:${pct}%"></div>
+        </div>
+        <div class="subject-card-v2-footer">
+          <span>${total.toLocaleString()} 카드</span>
+          <span>오늘 ${reviewed.toLocaleString()} 완료</span>
+        </div>
+      </button>
+    `;
+  }
+
+  const overallCard  = makeCard('', '전체 과목', stats.due_today, stats.total_cards, stats.reviewed_today);
+  const subjectCards = subjects.map(s => {
+    const ss       = subjectStats.find(x => x.subject_id === s.id);
+    const due      = ss ? ss.due : 0;
+    const total    = ss ? ss.total : (s.total_questions || 0);
+    const reviewed = ss ? ss.reviewed_today : 0;
+    return makeCard(s.id, s.name, due, total, reviewed);
+  }).join('');
+
+  const dynEl = document.getElementById('dynamic-screen');
+  dynEl.innerHTML = `
+    <div class="study-list-view">
+      <div class="section-header">
+        <h2 class="section-title">📚 과목별 학습</h2>
+      </div>
+      <div style="margin-bottom:16px;">${overallCard}</div>
+      ${subjectCards}
+    </div>
+  `;
+
+  document.querySelectorAll('.subject-card-v2').forEach(btn => {
+    btn.addEventListener('click', () => {
       S.activeSubjectId = btn.dataset.id || null;
-      await showHome();
+      startStudy();
     });
   });
-
-  document.getElementById('btn-start')?.addEventListener('click', startStudy);
 }
 
 // ── STUDY ─────────────────────────────────────────────────────────────────────
@@ -390,6 +451,7 @@ async function startStudy() {
 }
 
 async function fetchNextCard() {
+  hideBottomNav();
   showLoading();
   document.getElementById('login-screen').hidden = true;
 
@@ -437,9 +499,9 @@ function renderStudy() {
   if (isOX) {
     const c = card.choice;
     choicesSection = `
-      <div class="ox-choice-text">
-        <span class="choice-num">${esc(c.choice_number)}</span>
-        <span>${esc(c.content)}</span>
+      <div class="ox-statement">
+        <div class="ox-statement-label">다음 지문이 맞으면 O, 틀리면 X를 선택하세요</div>
+        <div class="ox-statement-text">${fmt(c.content)}</div>
       </div>
       <div class="ox-buttons">
         <button class="btn-ox btn-ox-o" id="btn-ox-o">O<small>맞음</small></button>
@@ -595,12 +657,9 @@ function renderResult() {
   if (isOX) {
     answerSection = `
       <div class="ox-result">
-        <div class="ox-choice-text">
-          <span class="choice-num">${esc(card.choice.choice_number)}</span>
-          <span>${esc(card.choice.content)}</span>
-        </div>
+        <div class="ox-statement-text">${fmt(card.choice.content)}</div>
         <div class="ox-actual ${card.choice.is_correct ? 'ox-correct' : 'ox-wrong'}">
-          이 선택지는 <strong>${card.choice.is_correct ? 'O (맞음)' : 'X (틀림)'}</strong>입니다
+          <span class="ox-verdict">${card.choice.is_correct ? 'O (맞음)' : 'X (틀림)'}</span>
           <span class="choice-mark">${correct ? '✓' : '✗'}</span>
         </div>
       </div>
@@ -634,7 +693,7 @@ function renderResult() {
   const explanation = isOX ? q.explanation : S.revealData.explanation;
   const explanationHtml = `
     <div class="explanation">
-      <div class="explanation-title">해설</div>
+      <div class="explanation-title">해설${isOX ? ' (출제 문항 전체 해설)' : ''}</div>
       <div class="explanation-text">${
         explanation
           ? fmt(explanation)
@@ -786,6 +845,8 @@ async function submitRating(rating) {
 
 // ── DONE ──────────────────────────────────────────────────────────────────────
 function renderDone() {
+  showBottomNav();
+  setActiveTab('home');
   const dynEl = document.getElementById('dynamic-screen');
   dynEl.innerHTML = `
     <div class="done-screen">
@@ -825,57 +886,194 @@ document.addEventListener('keydown', e => {
     }
 
   } else if (S.screen === 'home') {
-    if (e.key === 'Enter') document.getElementById('btn-start')?.click();
+    if (e.key === 'Enter') document.getElementById('btn-cta')?.click();
   }
 });
 
 // ── My Page ───────────────────────────────────────────────────────────────────
-async function showMyPage() {
+async function showMyPage(tab) {
+  if (tab !== undefined) S.myPageTab = tab;
   S.screen = 'mypage';
+  showBottomNav();
+  setActiveTab('mypage');
   showLoading();
   document.getElementById('login-screen').hidden = true;
-  let logs = [];
-  try { logs = await api.get('/reviews/history?limit=30'); } catch(e) {}
-  hideLoading();
 
-  function relTime(iso) {
-    const min = Math.floor((Date.now() - new Date(iso)) / 60000);
-    if (min < 1) return '방금';
-    if (min < 60) return `${min}분 전`;
-    const hr = Math.floor(min/60);
-    if (hr < 24) return `${hr}시간 전`;
-    const d = Math.floor(hr/24);
-    return d < 7 ? `${d}일 전` : `${Math.floor(d/7)}주 전`;
+  let data = {};
+  try {
+    if (S.myPageTab === 'stats') {
+      const [stats, subjStats] = await Promise.all([
+        api.get('/stats/'),
+        api.get('/stats/subjects'),
+      ]);
+      S.stats        = stats;
+      S.subjectStats = subjStats;
+      S.streak       = stats.study_streak;
+      data = { stats, subjStats };
+    } else if (S.myPageTab === 'history') {
+      data.logs = await api.get('/reviews/history?limit=50');
+    } else {
+      data.user = S.user;
+    }
+  } catch(e) {
+    console.error(e);
+  }
+  hideLoading();
+  renderMyPage(data);
+}
+
+function renderMyPage(data) {
+  const tab = S.myPageTab;
+  const tabDefs = [
+    { id: 'stats',     label: '내 통계' },
+    { id: 'history',   label: '오답노트' },
+    { id: 'bookmarks', label: '설정' },
+  ];
+  const tabHtml = tabDefs.map(t => `
+    <button class="mypage-tab-btn ${tab === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>
+  `).join('');
+
+  let contentHtml = '';
+
+  if (tab === 'stats') {
+    const { stats } = data;
+    if (!stats) {
+      contentHtml = '<div class="review-empty">통계를 불러올 수 없습니다.</div>';
+    } else {
+      contentHtml = `
+        <div class="stat-big-card">
+          <div class="stat-big-label">7일 정확도</div>
+          <div class="stat-big-value">${stats.accuracy_7d.toFixed(1)}%</div>
+          <div class="stat-big-sub">최근 7일간 학습 정확도</div>
+        </div>
+        <div class="stats-2col">
+          <div class="stat-big-card" style="margin:0">
+            <div class="stat-big-label">전체 카드</div>
+            <div class="stat-big-value" style="font-size:1.6rem">${stats.total_cards.toLocaleString()}</div>
+          </div>
+          <div class="stat-big-card" style="margin:0">
+            <div class="stat-big-label">연속 학습</div>
+            <div class="stat-big-value" style="font-size:1.6rem">${S.streak > 0 ? `🔥 ${S.streak}일` : '-'}</div>
+          </div>
+        </div>
+        <div class="stat-big-card">
+          <div class="stat-big-label">오늘</div>
+          <div style="display:flex;gap:28px;margin-top:8px;">
+            <div>
+              <div style="font-size:1.5rem;font-weight:800;color:var(--warning)">${stats.reviewed_today}</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">완료</div>
+            </div>
+            <div>
+              <div style="font-size:1.5rem;font-weight:800;color:var(--success)">${stats.correct_today}</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">정답</div>
+            </div>
+            <div>
+              <div style="font-size:1.5rem;font-weight:800;color:var(--primary)">${stats.due_today}</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">예정</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  } else if (tab === 'history') {
+    const logs = data.logs || [];
+    function relTime(iso) {
+      const min = Math.floor((Date.now() - new Date(iso)) / 60000);
+      if (min < 1) return '방금';
+      if (min < 60) return `${min}분 전`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}시간 전`;
+      const d = Math.floor(hr / 24);
+      return d < 7 ? `${d}일 전` : `${Math.floor(d / 7)}주 전`;
+    }
+    const itemsHtml = logs.length === 0
+      ? '<div class="review-empty">아직 학습 기록이 없어요</div>'
+      : logs.map(log => {
+          const stem  = (log.question_stem || '').slice(0, 60) +
+                        ((log.question_stem || '').length > 60 ? '…' : '');
+          const badge = log.card_type === 'choice_ox'
+            ? '<span class="review-badge review-badge-ox">O/X</span>'
+            : '<span class="review-badge review-badge-mcq">MCQ</span>';
+          const dots  = '●'.repeat(Math.min(log.rating, 5)) + '○'.repeat(5 - Math.min(log.rating, 5));
+          return `<div class="review-item">
+            ${badge}
+            <div class="review-stem">${esc(stem || '(문제 정보 없음)')}</div>
+            <div class="review-meta">
+              <span class="review-correct ${log.was_correct ? 'correct' : 'wrong'}">${log.was_correct ? '✓' : '✗'}</span>
+              <span class="review-rating">${dots}</span>
+              <span class="review-time">${relTime(log.reviewed_at)}</span>
+            </div></div>`;
+        }).join('');
+    contentHtml = `<div class="review-list">${itemsHtml}</div>`;
+  } else {
+    const user       = data.user || {};
+    const isDark     = document.body.classList.contains('dark-mode');
+    const isVacation = !!(user.vacation_mode_enabled);
+    contentHtml = `
+      <div class="settings-section">
+        <div class="settings-item">
+          <span class="settings-item-label">☀️ 다크 모드</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-dark" ${isDark ? 'checked' : ''}>
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+        <div class="settings-item">
+          <span class="settings-item-label">🏖️ 휴가 모드</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-vacation" ${isVacation ? 'checked' : ''}>
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+      </div>
+      ${user.display_name || user.email ? `
+        <div class="settings-section">
+          <div class="settings-item" style="cursor:default">
+            <span class="settings-item-label">계정</span>
+            <span class="settings-item-right">${esc(user.display_name || user.email || '')}</span>
+          </div>
+        </div>
+      ` : ''}
+      <div class="settings-section">
+        <div class="settings-item danger" id="settings-logout">
+          <span class="settings-item-label">로그아웃</span>
+          <span class="settings-item-right">→</span>
+        </div>
+      </div>
+    `;
   }
 
-  const itemsHtml = logs.length === 0
-    ? '<div class="review-empty">아직 학습 기록이 없어요</div>'
-    : logs.map(log => {
-        const stem = (log.question_stem||'').slice(0,60) + ((log.question_stem||'').length>60?'…':'');
-        const badge = log.card_type==='choice_ox'
-          ? '<span class="review-badge review-badge-ox">O/X</span>'
-          : '<span class="review-badge review-badge-mcq">MCQ</span>';
-        const dots = '●'.repeat(Math.min(log.rating,5))+'○'.repeat(5-Math.min(log.rating,5));
-        return `<div class="review-item">
-          ${badge}
-          <div class="review-stem">${esc(stem||'(문제 정보 없음)')}</div>
-          <div class="review-meta">
-            <span class="review-correct ${log.was_correct?'correct':'wrong'}">${log.was_correct?'✓':'✗'}</span>
-            <span class="review-rating">${dots}</span>
-            <span class="review-time">${relTime(log.reviewed_at)}</span>
-          </div></div>`;
-      }).join('');
-
-  document.getElementById('dynamic-screen').innerHTML = `
-    <div class="my-page">
-      <div class="my-page-header">
-        <button class="btn-back" id="btn-back-mypage">← 홈</button>
-        <h2 class="my-page-title">내 기록</h2>
-        ${S.streak>0?`<span class="streak-badge">🔥 ${S.streak}일</span>`:''}
+  const dynEl = document.getElementById('dynamic-screen');
+  dynEl.innerHTML = `
+    <div class="mypage-v2">
+      <div class="home-topbar" style="margin-bottom:16px">
+        <span class="home-topbar-title">👤 내 정보</span>
       </div>
-      <div class="review-list">${itemsHtml}</div>
-    </div>`;
-  document.getElementById('btn-back-mypage').addEventListener('click', showHome);
+      <div class="mypage-tabs">${tabHtml}</div>
+      <div class="mypage-content">${contentHtml}</div>
+    </div>
+  `;
+
+  document.querySelectorAll('.mypage-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => showMyPage(btn.dataset.tab));
+  });
+
+  if (tab === 'bookmarks') {
+    document.getElementById('toggle-dark')?.addEventListener('change', toggleDarkMode);
+    document.getElementById('settings-logout')?.addEventListener('click', logout);
+    const vacToggle = document.getElementById('toggle-vacation');
+    if (vacToggle) {
+      vacToggle.addEventListener('change', async () => {
+        try {
+          await api.put('/users/me/vacation', { enabled: vacToggle.checked });
+          if (S.user) S.user.vacation_mode_enabled = vacToggle.checked;
+        } catch(e) {
+          console.error(e);
+          vacToggle.checked = !vacToggle.checked;
+        }
+      });
+    }
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -895,6 +1093,11 @@ async function showMyPage() {
     renderLogin();
   });
   document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
+
+  // Wire up bottom navigation
+  document.getElementById('nav-home').addEventListener('click', showHome);
+  document.getElementById('nav-study').addEventListener('click', showStudyList);
+  document.getElementById('nav-mypage').addEventListener('click', () => showMyPage());
 
   if (tokens.exists()) {
     await showHome();
