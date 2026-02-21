@@ -13,7 +13,7 @@ from ..auth import (
     verify_password,
 )
 from ..dependencies import get_db
-from ..models import User
+from ..models import Flashcard, User, UserProgress
 from ..schemas import AccessTokenOut, LoginIn, RegisterIn, TokenOut
 
 router = APIRouter()
@@ -33,6 +33,12 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Auto-create user_progress for all existing flashcards
+    fc_result = await db.execute(select(Flashcard.id))
+    for fc_id in fc_result.scalars().all():
+        db.add(UserProgress(user_id=user.id, flashcard_id=fc_id))
+    await db.commit()
 
     uid = str(user.id)
     return TokenOut(

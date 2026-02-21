@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..dependencies import get_current_user, get_db
-from ..models import StudySession, User
+from ..models import Flashcard, StudySession, User, UserProgress
 from ..schemas import (
     HeatmapEntry,
     StreakOut,
@@ -103,6 +103,30 @@ async def get_streak(current_user: User = Depends(get_current_user)):
         longest_streak=current_user.longest_streak,
         last_studied_date=current_user.last_studied_date,
     )
+
+
+@router.post("/me/init-progress", status_code=200)
+async def init_progress(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create missing user_progress rows for all flashcards. Safe to call multiple times."""
+    fc_result = await db.execute(select(Flashcard.id))
+    all_fc_ids = fc_result.scalars().all()
+
+    existing = await db.execute(
+        select(UserProgress.flashcard_id).where(UserProgress.user_id == current_user.id)
+    )
+    existing_ids = set(existing.scalars().all())
+
+    created = 0
+    for fc_id in all_fc_ids:
+        if fc_id not in existing_ids:
+            db.add(UserProgress(user_id=current_user.id, flashcard_id=fc_id))
+            created += 1
+
+    await db.commit()
+    return {"created": created, "total_flashcards": len(all_fc_ids)}
 
 
 @router.get("/me/heatmap", response_model=List[HeatmapEntry])
