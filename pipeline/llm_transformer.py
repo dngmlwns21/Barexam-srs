@@ -41,7 +41,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
 
 log = logging.getLogger(__name__)
 
-MODEL        = "claude-sonnet-4-6"
+MODEL        = "claude-3-sonnet-20240229"
 MAX_TOKENS   = 4096
 CONCURRENCY  = 3       # parallel LLM calls
 RETRY_LIMIT  = 5
