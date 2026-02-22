@@ -112,6 +112,11 @@ const S = {
   qsIdx:          0,
   qsFlipped:      false,
   qsMode:         'failure',
+  // mock OX study mode
+  mockDeckStats:  [],   // DeckOut[] from /api/v1/mock/decks
+  isMockMode:     false,
+  mockQueue:      [],   // OXCardOut[] (shuffled)
+  mockIdx:        0,
 };
 
 // ── Escape / format helpers ───────────────────────────────────────────────────
@@ -158,6 +163,36 @@ function fmtInterval(days) {
   if (days < 7)      return `${Math.round(days)}일`;
   if (days < 30)     return `${Math.round(days / 7)}주`;
   return `${Math.round(days / 30)}개월`;
+}
+
+// ── Mock OX card adapter ──────────────────────────────────────────────────────
+function _mockCardToDue(oxCard) {
+  return {
+    flashcard_id: `mock-${oxCard.raw_id}-${oxCard.letter}`,
+    type: 'choice_ox',
+    is_starred: false,
+    personal_note: null,
+    sm2: { interval_days: 1, ease_factor: 2.5, repetitions: 0 },
+    question: {
+      id: `${oxCard.raw_id}-${oxCard.letter}`,
+      stem: oxCard.stem,
+      explanation: oxCard.explanation,
+      is_outdated: oxCard.is_outdated,
+      needs_revision: oxCard.is_revised,
+      source_name: oxCard.source,
+      source_year: oxCard.year,
+      question_number: oxCard.question_number,
+      tags: [oxCard.subject],
+      choices: [],
+    },
+    choice: {
+      id: `${oxCard.raw_id}-${oxCard.letter}`,
+      content: `[${oxCard.letter}] ${oxCard.statement}`,
+      is_correct: oxCard.is_correct,
+      choice_number: oxCard.choice_number,
+    },
+    _ox: oxCard, // keep original for rich result display
+  };
 }
 
 // ── Dark mode ─────────────────────────────────────────────────────────────────
@@ -277,19 +312,19 @@ async function showHome() {
   document.getElementById('login-screen').hidden = true;
 
   try {
-    const [stats, subjStats, subjects, user, deckStats] = await Promise.all([
+    const [stats, subjStats, subjects, user, mockDecks] = await Promise.all([
       api.get('/stats/'),
       api.get('/stats/subjects'),
       api.get('/subjects/'),
       api.get('/users/me'),
-      api.get('/dashboard/deck-stats').catch(() => []),
+      fetch(`${API}/mock/decks`).then(r => r.json()).catch(() => []),
     ]);
-    S.stats        = stats;
-    S.subjectStats = subjStats;
-    S.subjects     = subjects;
-    S.streak       = stats.study_streak;
-    S.user         = user;
-    S.deckStats    = deckStats || [];
+    S.stats          = stats;
+    S.subjectStats   = subjStats;
+    S.subjects       = subjects;
+    S.streak         = stats.study_streak;
+    S.user           = user;
+    S.mockDeckStats  = mockDecks || [];
   } catch (err) {
     console.error(err);
     hideLoading();
@@ -318,20 +353,37 @@ ${esc(err.message)}</pre>
 }
 
 function renderHome() {
-  const { stats, streak, deckStats } = S;
-  const overall   = deckStats.find(d => d.subject_id == null) || null;
-  const deckSubjs = deckStats.filter(d => d.subject_id != null);
-  const total     = stats.due_today + stats.reviewed_today;
-  const pct       = total > 0 ? Math.round((stats.reviewed_today / total) * 100) : 0;
-  const dueCount  = stats.due_today;
+  const { stats, streak, mockDeckStats } = S;
+  const total    = stats.due_today + stats.reviewed_today;
+  const pct      = total > 0 ? Math.round((stats.reviewed_today / total) * 100) : 0;
 
-  function deckRow(d, isOverall) {
-    const n   = d.new_count      || 0;
-    const lrn = d.learning_count || 0;
-    const rev = d.review_count   || 0;
+  // Stats strip
+  const statsStrip = `
+    <div class="stats-strip">
+      <div class="stat-cell">
+        <div class="stat-cell-value">${stats.total_cards.toLocaleString()}</div>
+        <div class="stat-cell-label">전체</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-cell-value" style="color:var(--primary)">${stats.due_today.toLocaleString()}</div>
+        <div class="stat-cell-label">예정</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-cell-value" style="color:var(--success)">${stats.reviewed_today.toLocaleString()}</div>
+        <div class="stat-cell-label">완료</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-cell-value" style="color:var(--warning)">${stats.accuracy_7d.toFixed(0)}%</div>
+        <div class="stat-cell-label">7일 정확도</div>
+      </div>
+    </div>
+  `;
+
+  // OX Deck table (from mock API)
+  function deckRow(subject, n, lrn, rev, isOverall) {
     return `
-      <button class="deck-row${isOverall ? ' deck-row-overall' : ''}" data-subject-id="${esc(d.subject_id || '')}">
-        <span class="deck-name">${esc(d.subject_name)}</span>
+      <button class="deck-row${isOverall ? ' deck-row-overall' : ''}" data-mock-subject="${esc(subject)}">
+        <span class="deck-name">${esc(subject)}</span>
         <span class="deck-counts">
           <span class="deck-count deck-new"  title="신규">${n}</span>
           <span class="deck-count deck-learn" title="학습중">${lrn}</span>
@@ -340,31 +392,36 @@ function renderHome() {
       </button>`;
   }
 
-  // Build deck section — fall back to old CTA if migration not yet run
-  const deckSection = overall ? `
-    <div class="deck-table">
-      <div class="deck-table-header">
-        <span class="deck-header-name">덱</span>
-        <span class="deck-header-counts">
-          <span class="deck-count deck-new"  title="신규">신규</span>
-          <span class="deck-count deck-learn" title="학습중">학습</span>
-          <span class="deck-count deck-rev"  title="복습">복습</span>
-        </span>
+  let deckSection;
+  if (mockDeckStats.length > 0) {
+    const totalNew = mockDeckStats.reduce((a, d) => a + d.new_count, 0);
+    const totalLrn = mockDeckStats.reduce((a, d) => a + d.learning_count, 0);
+    const totalRev = mockDeckStats.reduce((a, d) => a + d.review_count, 0);
+    deckSection = `
+      <div class="deck-table">
+        <div class="deck-table-header">
+          <span class="deck-header-name">OX 카드</span>
+          <span class="deck-header-counts">
+            <span class="deck-count deck-new"  title="신규">신규</span>
+            <span class="deck-count deck-learn" title="학습중">학습</span>
+            <span class="deck-count deck-rev"  title="복습">복습</span>
+          </span>
+        </div>
+        ${deckRow('전체 OX 카드', totalNew, totalLrn, totalRev, true)}
+        ${mockDeckStats.map(d => deckRow(d.subject, d.new_count, d.learning_count, d.review_count, false)).join('')}
       </div>
-      ${deckRow(overall, true)}
-      ${deckSubjs.map(d => deckRow(d, false)).join('')}
-    </div>
-    <div class="deck-legend">
-      <span><span class="legend-dot legend-new"></span>신규</span>
-      <span><span class="legend-dot legend-learn"></span>학습중</span>
-      <span><span class="legend-dot legend-rev"></span>복습</span>
-      <span class="legend-acc">7일 정확도 ${stats.accuracy_7d.toFixed(1)}%</span>
-    </div>
-  ` : `
-    <button class="btn-cta${dueCount === 0 ? ' disabled' : ''}" id="btn-cta" ${dueCount === 0 ? 'disabled' : ''}>
-      ${dueCount === 0 ? '✓ 오늘 학습 완료!' : `이어서 학습하기 (${dueCount.toLocaleString()}장)`}
-    </button>
-  `;
+      <div class="deck-legend">
+        <span><span class="legend-dot legend-new"></span>신규</span>
+        <span><span class="legend-dot legend-learn"></span>학습중</span>
+        <span><span class="legend-dot legend-rev"></span>복습</span>
+        <span class="legend-acc">7일 정확도 ${stats.accuracy_7d.toFixed(1)}%</span>
+      </div>
+    `;
+  } else {
+    deckSection = `
+      <button class="btn-cta" id="btn-cta">OX 카드 학습 시작</button>
+    `;
+  }
 
   const dynEl = document.getElementById('dynamic-screen');
   dynEl.innerHTML = `
@@ -391,20 +448,18 @@ function renderHome() {
         </div>
       </div>
 
+      ${statsStrip}
       ${deckSection}
     </div>
   `;
 
   document.getElementById('btn-logout').addEventListener('click', logout);
   document.getElementById('btn-dark-toggle-home').addEventListener('click', toggleDarkMode);
-  document.getElementById('btn-cta')?.addEventListener('click', () => {
-    S.activeSubjectId = null;
-    startStudy();
-  });
+  document.getElementById('btn-cta')?.addEventListener('click', () => startMockStudy(null));
   document.querySelectorAll('.deck-row').forEach(btn => {
     btn.addEventListener('click', () => {
-      S.activeSubjectId = btn.dataset.subjectId || null;
-      startStudy();
+      const subj = btn.dataset.mockSubject;
+      startMockStudy(subj === '전체 OX 카드' ? null : subj);
     });
   });
 }
@@ -501,9 +556,48 @@ function renderStudyList() {
 
 // ── STUDY ─────────────────────────────────────────────────────────────────────
 async function startStudy() {
+  S.isMockMode  = false;
   S.returnTo    = null;
   S.sessionDone = 0;
   await fetchNextCard();
+}
+
+async function startMockStudy(subject) {
+  S.isMockMode  = true;
+  S.returnTo    = null;
+  S.sessionDone = 0;
+  hideBottomNav();
+  showLoading();
+  document.getElementById('login-screen').hidden = true;
+  try {
+    const url = subject
+      ? `${API}/mock/cards?subject=${encodeURIComponent(subject)}&limit=500`
+      : `${API}/mock/cards?limit=500`;
+    const cards = await fetch(url).then(r => r.json());
+    // Fisher-Yates shuffle
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    S.mockQueue = cards;
+    S.mockIdx   = 0;
+    if (S.mockQueue.length === 0) {
+      hideLoading();
+      S.screen = 'done';
+      renderDone();
+      return;
+    }
+    S.card       = _mockCardToDue(S.mockQueue[0]);
+    S.chosen     = null;
+    S.revealData = null;
+    S.peerStats  = null;
+    S.screen     = 'study';
+    hideLoading();
+    renderStudy();
+  } catch (err) {
+    console.error(err);
+    hideLoading();
+  }
 }
 
 async function studySpecificCard(flashcardId) {
@@ -529,6 +623,23 @@ async function studySpecificCard(flashcardId) {
 }
 
 async function fetchNextCard() {
+  // ── Mock mode: advance queue locally, no API call ──────────────────────────
+  if (S.isMockMode) {
+    S.mockIdx++;
+    if (S.mockIdx >= S.mockQueue.length) {
+      S.screen = 'done';
+      renderDone();
+      return;
+    }
+    S.card       = _mockCardToDue(S.mockQueue[S.mockIdx]);
+    S.chosen     = null;
+    S.revealData = null;
+    S.peerStats  = null;
+    S.screen     = 'study';
+    renderStudy();
+    return;
+  }
+
   hideBottomNav();
   showLoading();
   document.getElementById('login-screen').hidden = true;
@@ -772,11 +883,26 @@ function renderResult() {
     `;
   }
 
-  // Explanation — always shown (placeholder when null)
+  // Explanation — always shown
   const explanation = isOX ? q.explanation : S.revealData.explanation;
+
+  // Rich metadata from mock OX card
+  const oxRaw = card._ox;
+  const richMeta = (isOX && oxRaw) ? (() => {
+    const imp = { A: '🔴 A 핵심', B: '🟡 B 표준', C: '⚪ C 주변' }[oxRaw.importance] || oxRaw.importance;
+    const items = [];
+    if (oxRaw.importance) items.push(`<span class="ox-meta-badge ox-importance-${oxRaw.importance}">${imp}</span>`);
+    if (oxRaw.legal_provision) items.push(`<span class="ox-meta-badge ox-provision">📖 ${esc(oxRaw.legal_provision)}</span>`);
+    if (oxRaw.precedent)       items.push(`<span class="ox-meta-badge ox-precedent">⚖️ ${esc(oxRaw.precedent)}</span>`);
+    if (oxRaw.theory)          items.push(`<span class="ox-meta-badge ox-theory">💡 ${esc(oxRaw.theory)}</span>`);
+    if (oxRaw.is_revised && oxRaw.revision_note) items.push(`<div class="ox-revision-note">⚠️ 개정: ${esc(oxRaw.revision_note)}</div>`);
+    return items.length ? `<div class="ox-meta-row">${items.join('')}</div>` : '';
+  })() : '';
+
   const explanationHtml = `
     <div class="explanation">
-      <div class="explanation-title">해설${isOX ? ' (출제 문항 전체 해설)' : ''}</div>
+      <div class="explanation-title">해설</div>
+      ${richMeta}
       <div class="explanation-text">${
         explanation
           ? fmt(explanation)
@@ -922,20 +1048,24 @@ async function submitRating(rating) {
   }
 
   let submitOk = true;
-  try {
-    await api.post(`/reviews/${flashcardId}`, body);
-  } catch (err) {
-    console.error(err);
-    submitOk = false;
-  }
-
-  if (submitOk) {
+  if (S.isMockMode) {
+    // Mock mode: no DB review, just advance
     S.sessionDone++;
-    // FIX M-3: set up undo buffer — 8-second window to undo last rating
-    clearUndoBuffer();
-    const undoTimer = setTimeout(() => { S.undoBuffer = null; }, 8000);
-    S.undoBuffer = { flashcardId, timer: undoTimer };
-    showUndoToast(flashcardId);
+  } else {
+    try {
+      await api.post(`/reviews/${flashcardId}`, body);
+    } catch (err) {
+      console.error(err);
+      submitOk = false;
+    }
+    if (submitOk) {
+      S.sessionDone++;
+      // FIX M-3: set up undo buffer — 8-second window to undo last rating
+      clearUndoBuffer();
+      const undoTimer = setTimeout(() => { S.undoBuffer = null; }, 8000);
+      S.undoBuffer = { flashcardId, timer: undoTimer };
+      showUndoToast(flashcardId);
+    }
   }
 
   if (S.returnTo === 'mypage') {

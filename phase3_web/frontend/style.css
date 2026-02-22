@@ -1046,6 +1046,39 @@ body.dark-mode .login-card { background: var(--card); }
   font-weight: 700;
 }
 
+/* ── OX Rich Meta Badges ─────────────────────────────────────────────────────── */
+.ox-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.ox-meta-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.ox-importance-A { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+.ox-importance-B { background: #fefce8; border-color: #fde047; color: #854d0e; }
+.ox-importance-C { background: var(--bg); color: var(--text-muted); }
+.ox-provision    { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.ox-precedent    { background: #f5f3ff; border-color: #c4b5fd; color: #6d28d9; }
+.ox-theory       { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+.ox-revision-note {
+  width: 100%;
+  padding: 6px 10px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  font-size: .75rem;
+  color: #92400e;
+}
+
 /* ── Bottom Navigation Bar ───────────────────────────────────────────────────── */
 .bottom-nav {
   position: fixed;
@@ -1659,6 +1692,32 @@ kbd {
 }
 
 /* ── Phase 4: Anki Deck Table ────────────────────────────────────────────────── */
+/* ── Stats strip ─────────────────────────────────────────────────────────── */
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.stat-cell {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 10px 8px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.stat-cell-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+}
+.stat-cell-label {
+  font-size: .62rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 .deck-table {
   background: var(--card);
   border-radius: var(--radius);
