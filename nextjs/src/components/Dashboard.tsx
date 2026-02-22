@@ -72,7 +72,7 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Summary strip */}
+        {/* Anki-style Summary strip */}
         <div className="mb-4 grid grid-cols-3 gap-3">
           <div className="rounded-xl bg-blue-50 p-3 text-center">
             <p className="text-2xl font-black text-blue-500">{totalNew}</p>
@@ -98,7 +98,26 @@ export default function Dashboard() {
             <span className="w-12 text-right text-xs font-semibold text-green-500">복습</span>
           </div>
 
-          {subjectDecks.map((deck, i) => {
+          {/* Overall Deck (Study All) */}
+          <button
+            onClick={() => router.push("/study")}
+            disabled={totalNew + totalLearning + totalReview === 0}
+            className="flex w-full items-center px-4 py-3.5 text-left font-bold transition-colors border-b border-gray-100 hover:bg-blue-50 active:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <span className="flex-1 text-sm text-gray-900">전체 과목</span>
+            <span className="w-12 text-right text-sm font-bold text-blue-500">
+              {totalNew > 0 ? totalNew : ""}
+            </span>
+            <span className="w-12 text-right text-sm font-bold text-red-500">
+              {totalLearning > 0 ? totalLearning : ""}
+            </span>
+            <span className="w-12 text-right text-sm font-bold text-green-500">
+              {totalReview > 0 ? totalReview : ""}
+            </span>
+          </button>
+
+          {/* Subject Decks */}
+          {subjectDecks.map((deck) => {
             const hasCards =
               deck.new_count + deck.learning_count + deck.review_count > 0;
             return (
@@ -110,13 +129,7 @@ export default function Dashboard() {
                   )
                 }
                 disabled={!hasCards}
-                className={[
-                  "flex w-full items-center px-4 py-3.5 text-left transition-colors",
-                  i > 0 ? "border-t border-gray-100" : "",
-                  hasCards
-                    ? "hover:bg-blue-50 active:bg-blue-100 cursor-pointer"
-                    : "opacity-40 cursor-not-allowed",
-                ].join(" ")}
+                className="flex w-full items-center px-4 py-3.5 text-left transition-colors border-t border-gray-100 hover:bg-blue-50 active:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span className="flex-1 text-sm font-medium text-gray-800">
                   {deck.subject_name}
@@ -134,22 +147,12 @@ export default function Dashboard() {
             );
           })}
 
-          {subjectDecks.length === 0 && (
+          {decks.length === 0 && (
             <div className="py-16 text-center text-sm text-gray-400">
               카드가 없습니다
             </div>
           )}
         </div>
-
-        {/* Study all CTA */}
-        {totalNew + totalLearning + totalReview > 0 && (
-          <button
-            onClick={() => router.push("/study")}
-            className="mt-4 w-full rounded-2xl bg-blue-500 py-4 text-sm font-bold text-white shadow-sm hover:bg-blue-600 active:bg-blue-700 transition-colors"
-          >
-            전체 학습 시작 ({totalNew + totalLearning + totalReview}개)
-          </button>
-        )}
       </div>
     </div>
   );

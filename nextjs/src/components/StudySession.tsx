@@ -15,8 +15,8 @@ interface OXCard {
   choice_number: number;
   statement: string;
   is_correct: boolean;
-  legal_provision: string | null;
-  precedent: string | null;
+  legal_basis: string | null;
+  case_citation: string | null;
   theory: string | null;
   is_revised: boolean;
   revision_note: string | null;
@@ -41,10 +41,10 @@ const IMPORTANCE_LABEL: Record<string, string> = {
 
 // ── Grade button config ──────────────────────────────────────────────────────
 const GRADE_BUTTONS = [
-  { rating: 1, label: "다시",   sub: "Again", cls: "bg-red-50   text-red-600   hover:bg-red-100"   },
-  { rating: 2, label: "어려움", sub: "Hard",  cls: "bg-gray-100 text-gray-600  hover:bg-gray-200"  },
-  { rating: 3, label: "보통",   sub: "Good",  cls: "bg-green-50 text-green-600 hover:bg-green-100" },
-  { rating: 4, label: "쉬움",   sub: "Easy",  cls: "bg-blue-50  text-blue-600  hover:bg-blue-100"  },
+  { rating: 1, label: "다시",   sub: "Again", cls: "bg-red-500 text-white hover:bg-red-600"   },
+  { rating: 2, label: "어려움", sub: "Hard",  cls: "bg-gray-500 text-white hover:bg-gray-600"  },
+  { rating: 3, label: "보통",   sub: "Good",  cls: "bg-green-500 text-white hover:bg-green-600" },
+  { rating: 4, label: "쉬움",   sub: "Easy",  cls: "bg-blue-500 text-white hover:bg-blue-600"  },
 ] as const;
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -65,7 +65,14 @@ export default function StudySession() {
       : `${API_BASE}/api/v1/mock/cards?limit=500`;
     fetch(url)
       .then((r) => r.json())
-      .then((data: OXCard[]) => setCards(data))
+      .then((data: any[]) => {
+        const mappedData = data.map(item => ({
+          ...item,
+          legal_basis: item.legal_provision,
+          case_citation: item.precedent,
+        }));
+        setCards(mappedData as OXCard[]);
+      })
       .finally(() => setLoading(false));
   }, [subject]);
 
@@ -209,7 +216,6 @@ export default function StudySession() {
             O / X 판단
           </p>
           <p className="text-lg font-medium leading-relaxed text-gray-900">
-            <span className="mr-2 font-black text-indigo-500">{card.letter}</span>
             {card.statement}
           </p>
         </div>
@@ -249,29 +255,29 @@ export default function StudySession() {
               </p>
             </div>
 
-            {/* Legal citations */}
-            {(card.legal_provision || card.precedent || card.theory) && (
+            {/* Union Textbook Style citations */}
+            {(card.legal_basis || card.case_citation || card.theory) && (
               <div className="rounded-2xl bg-white p-5 shadow-sm space-y-2.5">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
                   근거
                 </p>
-                {card.legal_provision && (
+                {card.legal_basis && (
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-bold text-blue-700">
                       조문
                     </span>
                     <span className="text-sm text-gray-700">
-                      {card.legal_provision}
+                      {card.legal_basis}
                     </span>
                   </div>
                 )}
-                {card.precedent && (
+                {card.case_citation && (
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 shrink-0 rounded-md bg-purple-100 px-1.5 py-0.5 text-xs font-bold text-purple-700">
                       판례
                     </span>
                     <span className="text-sm text-gray-700">
-                      {card.precedent}
+                      {card.case_citation}
                     </span>
                   </div>
                 )}
@@ -318,6 +324,18 @@ export default function StudySession() {
         )}
       </div>
 
+      {/* AI Tutor FAB */}
+      <button
+        onClick={() => alert("AI Tutor (Coming Soon!)")}
+        className="fixed bottom-24 right-6 z-10 h-14 w-14 rounded-full bg-indigo-600 text-white shadow-lg flex items-center justify-center hover:bg-indigo-700 transition-all transform hover:scale-105"
+        title="AI Tutor"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707.707M12 21v-1m0-16a9 9 0 110 18 9 9 0 010-18z" />
+        </svg>
+        <span className="sr-only">AI Tutor</span>
+      </button>
+
       {/* ── Bottom action bar ─────────────────────────────────────────────── */}
       {revealed && (
         <div className="border-t border-gray-200 bg-white px-4 py-3 safe-area-bottom">
@@ -328,8 +346,8 @@ export default function StudySession() {
                 onClick={() => grade(rating)}
                 className={`flex flex-col items-center rounded-2xl py-3 transition-all active:scale-95 ${cls}`}
               >
-                <span className="text-xs font-bold">{label}</span>
-                <span className="text-[10px] opacity-60">{sub}</span>
+                <span className="text-sm font-bold">{label}</span>
+                <span className="text-[10px] opacity-80">{sub}</span>
               </button>
             ))}
           </div>
