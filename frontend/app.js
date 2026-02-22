@@ -182,7 +182,7 @@ function _mockCardToDue(oxCard) {
       stem: '',  // OX statements are self-contained — no garbled PDF stem
       explanation: oxCard.explanation,
       overall_explanation: oxCard.overall_explanation, // New field
-      keywords: oxCard.keywords, // New field
+      keywords: [], // OXCard의 keywords는 선택지별 키워드이므로, 문제 전체 키워드는 비워둡니다.
       is_outdated: oxCard.is_outdated,
       needs_revision: oxCard.is_revised,
       source_name: oxCard.source,
