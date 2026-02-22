@@ -172,6 +172,8 @@ class Choice(Base):
     explanation_core: Mapped[Optional[str]] = mapped_column(Text)
 
     __table_args__ = (
+        UniqueConstraint("question_id", "choice_number"),
+    )
 
     question:   Mapped["Question"]         = relationship(back_populates="choices")
     flashcards: Mapped[List["Flashcard"]]  = relationship(back_populates="choice")
