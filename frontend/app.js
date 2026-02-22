@@ -439,13 +439,6 @@ function renderHome() {
       <div class="hero-card">
         <div class="hero-streak-label">연속 학습</div>
         <div class="hero-streak-value">${streak > 0 ? `🔥 ${streak}일 연속` : '오늘 시작해요!'}</div>
-        <div class="hero-daily-label">
-          <span>오늘 진도</span>
-          <span>${stats.reviewed_today} / ${total || stats.total_cards} 완료</span>
-        </div>
-        <div class="hero-progress-bar">
-          <div class="hero-progress-fill" style="width:${pct}%"></div>
-        </div>
       </div>
 
       ${statsStrip}
@@ -700,17 +693,16 @@ function renderStudy() {
       <div class="keyboard-hint">키보드: O = 맞음 &nbsp;|&nbsp; X = 틀림</div>
     `;
   } else {
-    const choices = [...(q.choices || [])].sort((a, b) => a.choice_number - b.choice_number);
     choicesSection = `
-      <div class="choices" id="choices">
-        ${choices.map(c => `
-          <button class="choice" data-num="${esc(c.choice_number)}">
-            <span class="choice-num">${esc(c.choice_number)}</span>
-            <span class="choice-text">${esc(c.content)}</span>
-          </button>
-        `).join('')}
+      <div class="ox-statement">
+        <div class="ox-statement-label">정답을 알면 O, 모르면 X를 선택하세요</div>
+        <div class="ox-statement-text">${fmt(q.stem)}</div>
       </div>
-      <div class="keyboard-hint">키보드: 1–${choices.length} 선택</div>
+      <div class="ox-buttons">
+        <button class="btn-ox btn-ox-o" id="btn-ox-o">O<small>알아요</small></button>
+        <button class="btn-ox btn-ox-x" id="btn-ox-x">X<small>모르겠어요</small></button>
+      </div>
+      <div class="keyboard-hint">키보드: O = 알아요 &nbsp;|&nbsp; X = 모르겠어요</div>
     `;
   }
 
@@ -746,14 +738,8 @@ function renderStudy() {
   document.getElementById('btn-star').addEventListener('click', () => toggleStar(q.id, card.is_starred));
   document.getElementById('btn-help')?.addEventListener('click', showHelpModal);
 
-  if (isOX) {
-    document.getElementById('btn-ox-o').addEventListener('click', () => selectOX('O'));
-    document.getElementById('btn-ox-x').addEventListener('click', () => selectOX('X'));
-  } else {
-    document.querySelectorAll('.choice').forEach(btn => {
-      btn.addEventListener('click', () => selectChoice(parseInt(btn.dataset.num)));
-    });
-  }
+  document.getElementById('btn-ox-o').addEventListener('click', () => selectOX('O'));
+  document.getElementById('btn-ox-x').addEventListener('click', () => selectOX('X'));
 }
 
 async function selectChoice(num) {
@@ -798,11 +784,19 @@ async function selectOX(answer) {
 
   document.querySelectorAll('.btn-ox').forEach(b => (b.disabled = true));
 
-  // Immediate reveal — answer known from card.choice.is_correct
-  S.revealData = {
-    answer:      S.card.choice.is_correct ? 'O' : 'X',
-    explanation: S.card.question.explanation,
-  };
+  // Immediate reveal
+  if (S.card.type === 'choice_ox') {
+    S.revealData = {
+      answer:      S.card.choice.is_correct ? 'O' : 'X',
+      explanation: S.card.question.explanation,
+    };
+  } else {
+    // MCQ self-assess: reveal correct choice for display
+    S.revealData = {
+      answer:      S.card.question.correct_choice,
+      explanation: S.card.question.explanation,
+    };
+  }
   S.peerStats = null;
   S.screen = 'result';
   renderResult();
@@ -836,7 +830,7 @@ function renderResult() {
   // Correctness
   const correct = isOX
     ? (S.chosen === 'O') === card.choice.is_correct
-    : S.chosen === S.revealData.answer;
+    : S.chosen === 'O'; // MCQ self-assess: O = "I knew it"
 
   // Warning badge
   let warningBadge = '';
@@ -865,17 +859,12 @@ function renderResult() {
       <div class="choices">
         ${choices.map(c => {
           const n = c.choice_number;
-          const cls = [
-            'choice revealed',
-            n === answer               ? 'choice-correct' : '',
-            n === S.chosen && !correct ? 'choice-wrong'   : '',
-          ].join(' ');
+          const isAns = n === answer;
           return `
-            <div class="${cls}">
+            <div class="choice revealed${isAns ? ' choice-correct' : ''}">
               <span class="choice-num">${esc(n)}</span>
               <span class="choice-text">${esc(c.content)}</span>
-              ${n === answer               ? '<span class="choice-mark">✓</span>' : ''}
-              ${n === S.chosen && !correct ? '<span class="choice-mark">✗</span>' : ''}
+              ${isAns ? '<span class="choice-mark">✓</span>' : ''}
             </div>
           `;
         }).join('')}
@@ -942,12 +931,11 @@ function renderResult() {
   // Rating buttons with live SM-2 interval preview
   const sm2  = card.sm2;
   const user = S.user;
-  const ratingBtns = correct ? `
-    <button class="btn-rating btn-hard" data-rating="3">어려움<small>${fmtInterval(calcNextInterval(sm2, 3, user))}</small></button>
-    <button class="btn-rating btn-good" data-rating="4">알맞음<small>${fmtInterval(calcNextInterval(sm2, 4, user))}</small></button>
-    <button class="btn-rating btn-easy" data-rating="5">쉬움<small>${fmtInterval(calcNextInterval(sm2, 5, user))}</small></button>
-  ` : `
+  const ratingBtns = `
     <button class="btn-rating btn-again" data-rating="1">다시<small>${fmtInterval(calcNextInterval(sm2, 1, user))}</small></button>
+    <button class="btn-rating btn-hard"  data-rating="3">어려움<small>${fmtInterval(calcNextInterval(sm2, 3, user))}</small></button>
+    <button class="btn-rating btn-good"  data-rating="4">보통<small>${fmtInterval(calcNextInterval(sm2, 4, user))}</small></button>
+    <button class="btn-rating btn-easy"  data-rating="5">쉬움<small>${fmtInterval(calcNextInterval(sm2, 5, user))}</small></button>
   `;
 
   const dynEl = document.getElementById('dynamic-screen');
@@ -979,7 +967,7 @@ function renderResult() {
       </div>
 
       <div class="rating-bar">
-        <span class="rating-label">${correct ? '얼마나 잘 알았나요?' : '다시 학습합니다'}</span>
+        <span class="rating-label">얼마나 알았나요?</span>
         <div class="rating-btns">${ratingBtns}</div>
       </div>
     </div>
@@ -1160,26 +1148,14 @@ document.addEventListener('keydown', e => {
   }
 
   if (S.screen === 'study') {
-    if (S.card && S.card.type === 'choice_ox') {
-      if (e.key === 'o' || e.key === 'O') selectOX('O');
-      else if (e.key === 'x' || e.key === 'X') selectOX('X');
-    } else {
-      const n = parseInt(e.key);
-      if (n >= 1 && n <= 9) selectChoice(n);
-    }
+    if (e.key === 'o' || e.key === 'O') selectOX('O');
+    else if (e.key === 'x' || e.key === 'X') selectOX('X');
 
   } else if (S.screen === 'result') {
-    const isOX  = S.card && S.card.type === 'choice_ox';
-    const correct = isOX
-      ? (S.chosen === 'O') === S.card.choice.is_correct
-      : S.chosen === S.revealData?.answer;
-    if (correct) {
-      if (e.key === 'h' || e.key === 'H') submitRating(3);
-      else if (e.key === 'g' || e.key === 'G' || e.key === ' ') submitRating(4);
-      else if (e.key === 'e' || e.key === 'E') submitRating(5);
-    } else {
-      if (e.key === ' ' || e.key === 'Enter') submitRating(1);
-    }
+    if (e.key === 'a' || e.key === 'A' || e.key === 'Enter') submitRating(1);
+    else if (e.key === 'h' || e.key === 'H') submitRating(3);
+    else if (e.key === 'g' || e.key === 'G' || e.key === ' ') { e.preventDefault(); submitRating(4); }
+    else if (e.key === 'e' || e.key === 'E') submitRating(5);
 
   } else if (S.screen === 'home') {
     if (e.key === 'Enter') document.getElementById('btn-cta')?.click();
