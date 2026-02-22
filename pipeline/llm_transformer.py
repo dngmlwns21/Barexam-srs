@@ -76,6 +76,7 @@ OX_TOOL = {
                     "required": [
                         "letter", "choice_number", "statement",
                         "is_correct", "importance", "explanation",
+                        "explanation_core", "keywords",
                     ],
                     "properties": {
                         "letter": {
@@ -102,19 +103,34 @@ OX_TOOL = {
                                 "False (X) if legally incorrect."
                             ),
                         },
-                        "legal_provision": {
+                        "legal_basis": {
                             "type": "string",
                             "description": (
-                                "Exact statutory basis, e.g. '민법 제390조 제2항'. "
+                                "Exact statutory basis, e.g., '민법 제390조 제2항'. "
                                 "Omit if not applicable."
                             ),
                         },
-                        "precedent": {
+                        "case_citation": {
                             "type": "string",
                             "description": (
                                 "Exact Supreme Court / Constitutional Court citation, "
-                                "e.g. '대법원 2022.12.29. 선고 2022다12345 판결'. "
+                                "e.g., '대법원 2022.12.29. 선고 2022다12345 판결'. "
                                 "Omit if not applicable."
+                            ),
+                        },
+                        "explanation_core": {
+                            "type": "string",
+                            "description": (
+                                "A single, core sentence that directly explains the reason for O/X. "
+                                "This is the most crucial part of the explanation."
+                            ),
+                        },
+                        "keywords": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "A list of 3-5 essential legal keywords for this statement, "
+                                "e.g., ['손해배상', '이행이익', '신뢰이익']."
                             ),
                         },
                         "theory": {
@@ -148,7 +164,7 @@ OX_TOOL = {
                             "type": "string",
                             "description": (
                                 "Full instructor-level explanation (3-6 sentences) citing "
-                                "legal_provision, precedent, and theory. Conclude with "
+                                "legal_basis, case_citation, and theory. Conclude with "
                                 "why this statement is O or X."
                             ),
                         },
