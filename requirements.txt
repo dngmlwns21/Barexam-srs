@@ -1,6 +1,0 @@
-email-validator 
-
-email-validator
- 
-email-validator 
-pydantic[email] 

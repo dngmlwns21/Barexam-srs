@@ -1,10 +1,10 @@
 """Phase 4 — Production-Ready FastAPI SRS Backend.
 
 Run:
-    cd phase4_api
+    cd backend
     cp .env.example .env       # fill in DATABASE_URL etc.
     pip install -r requirements.txt
-    uvicorn main:app --reload --port 8000
+    uvicorn backend.main:app --reload --port 8000
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from .config import settings
 from .database import Base, engine
 from .routers import auth, cards, dashboard, flashcards, mock_cards, questions, reviews, stats, subjects, tags, users
 
-FRONTEND_DIR = Path(__file__).parent.parent / "phase3_web" / "frontend"
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
 @asynccontextmanager

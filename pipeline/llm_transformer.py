@@ -35,7 +35,7 @@ from .models import (
     TransformedQuestion,
 )
 
-load_dotenv(Path(__file__).resolve().parents[1] / "phase4_api" / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
 
 log = logging.getLogger(__name__)
 
