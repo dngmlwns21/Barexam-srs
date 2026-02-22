@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, engine
-from .routers import auth, cards, dashboard, flashcards, mock_cards, questions, reviews, stats, subjects, tags, users
+from .routers import auth, cards, dashboard, flashcards, mock_cards, questions, reviews, stats, subjects, tags, users, pipeline
 
 
 @asynccontextmanager
@@ -66,6 +66,7 @@ app.include_router(tags.router,        prefix="/api/v1/tags",       tags=["Tags"
 app.include_router(dashboard.router,   prefix="/api/v1/dashboard",  tags=["Dashboard"])
 app.include_router(cards.router,       prefix="/api/v1/cards",      tags=["Cards"])
 app.include_router(mock_cards.router,  prefix="/api/v1/mock",       tags=["Mock"])
+app.include_router(pipeline.router,    prefix="/api/v1/pipeline",   tags=["Pipeline"])
 
 
 @app.get("/health", tags=["Health"])
