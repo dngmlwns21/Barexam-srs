@@ -219,6 +219,16 @@ class SetTagsIn(BaseModel):
     tag_ids: List[uuid.UUID]
 
 
+class BookmarkedQuestionOut(BaseModel):
+    id: uuid.UUID
+    flashcard_id: uuid.UUID
+    stem: str
+    subject_name: str
+    tags: List[str]
+    is_starred: bool
+    personal_note: Optional[str]
+
+
 # ── Flashcard ─────────────────────────────────────────────────────────────────
 
 class SM2StateOut(BaseModel):

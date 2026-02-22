@@ -1180,7 +1180,7 @@ async function showMyPage(tab) {
   setActiveTab('mypage');
   showLoading();
   document.getElementById('login-screen').hidden = true;
-
+    
   let data = {};
   try {
     if (S.myPageTab === 'stats') {
@@ -1200,8 +1200,12 @@ async function showMyPage(tab) {
       S.historyHasMore = logs.length > PAGE;
       data.logs = logs.slice(0, PAGE);
       S.historyOffset = PAGE;
-    } else {
-      data.user = S.user;
+    } else if (S.myPageTab === 'bookmarks') {
+      data.starred_questions = await api.get('/questions/starred');
+    } else if (S.myPageTab === 'settings') {
+      const user = await api.get('/users/me');
+      S.user = user;
+      data.user = user;
     }
   } catch(e) {
     console.error(e);
@@ -1215,7 +1219,8 @@ function renderMyPage(data) {
   const tabDefs = [
     { id: 'stats',     label: '내 통계' },
     { id: 'history',   label: '오답노트' },
-    { id: 'bookmarks', label: '설정' },
+    { id: 'bookmarks', label: '북마크' },
+    { id: 'settings',  label: '설정' },
   ];
   const tabHtml = tabDefs.map(t => `
     <button class="mypage-tab-btn ${tab === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>
@@ -1297,7 +1302,22 @@ function renderMyPage(data) {
       ? `<button class="btn-load-more" id="btn-load-more">더 보기</button>`
       : '';
     contentHtml = `<div class="review-list" id="review-list-container">${itemsHtml}</div>${loadMoreHtml}`;
-  } else {
+  } else if (tab === 'bookmarks') {
+    const questions = data.starred_questions || [];
+    const itemsHtml = questions.length === 0
+      ? '<div class="review-empty">북마크한 문제가 없습니다.</div>'
+      : questions.map(q => {
+          const stem  = (q.stem || '').slice(0, 60) +
+                        ((q.stem || '').length > 60 ? '…' : '');
+          return `<div class="review-item" data-flashcard-id="${esc(q.flashcard_id)}">
+            <div class="review-stem">${esc(stem || '(문제 정보 없음)')}</div>
+            <div class="review-meta">
+              <span class="review-subject">${esc(q.subject_name)}</span>
+              <button class="btn-restudy" data-flashcard-id="${esc(q.flashcard_id)}">▶ 다시</button>
+            </div></div>`;
+        }).join('');
+    contentHtml = `<div class="review-list" id="review-list-container">${itemsHtml}</div>`;
+  } else if (tab === 'settings') {
     const user       = data.user || {};
     const isDark     = document.body.classList.contains('dark-mode');
     const isVacation = !!(user.vacation_mode_enabled);
@@ -1455,7 +1475,13 @@ function renderMyPage(data) {
     }
   });
 
-  if (tab === 'bookmarks') {
+  // 북마크 "다시 풀기" buttons
+  document.getElementById('review-list-container')?.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-restudy');
+    if (btn) studySpecificCard(btn.dataset.flashcardId);
+  });
+
+  if (tab === 'settings') {
     document.getElementById('toggle-dark')?.addEventListener('change', toggleDarkMode);
     document.getElementById('settings-logout')?.addEventListener('click', logout);
 

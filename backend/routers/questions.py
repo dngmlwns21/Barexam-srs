@@ -29,6 +29,7 @@ from ..schemas import (
     QuestionStatsOut,
     SetTagsIn,
     StarIn,
+    BookmarkedQuestionOut,
 )
 
 router = APIRouter()
@@ -38,6 +39,38 @@ def _difficulty_pct(total: int, correct: int) -> float:
     if total == 0:
         return 0.0
     return round(correct / total * 100, 1)
+
+
+@router.get("/starred", response_model=List[BookmarkedQuestionOut])
+async def list_starred_questions(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get all starred questions for the current user."""
+    stmt = (
+        select(Question, UserProgress)
+        .join(Flashcard, UserProgress.flashcard_id == Flashcard.id)
+        .join(Question, Flashcard.question_id == Question.id)
+        .where(UserProgress.user_id == current_user.id)
+        .where(UserProgress.is_starred == True)
+        .where(Flashcard.type == "question")
+        .options(selectinload(Question.subject))
+        .order_by(UserProgress.updated_at.desc())
+    )
+    results = await db.execute(stmt)
+
+    return [
+        BookmarkedQuestionOut(
+            id=q.id,
+            flashcard_id=up.flashcard_id,
+            stem=q.stem,
+            subject_name=q.subject.name if q.subject else "Unknown",
+            tags=q.tags,
+            is_starred=up.is_starred,
+            personal_note=up.personal_note,
+        )
+        for q, up in results.all()
+    ]
 
 
 @router.get("/", response_model=PaginatedQuestions)
