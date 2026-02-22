@@ -134,6 +134,7 @@ class ChoiceOut(BaseModel):
     legal_basis: Optional[str] = None
     case_citation: Optional[str] = None
     explanation_core: Optional[str] = None
+    keywords: Optional[List[str]] = None # New field
 
     model_config = {"from_attributes": True}
 
@@ -155,7 +156,8 @@ class QuestionCardOut(BaseModel):
     is_outdated:     bool
     needs_revision:  bool
     outdated_reason: Optional[str]
-    keywords:        Optional[List[str]] = None
+    keywords:        Optional[List[str]] = None # Existing field, ensure it's here
+    overall_explanation: Optional[str] = None # New field
     choices:         List[ChoicePublicOut] = []   # is_correct stripped
     created_at:      datetime
 
@@ -177,6 +179,7 @@ class QuestionOut(BaseModel):
     needs_revision:  bool
     outdated_reason: Optional[str]
     keywords:        Optional[List[str]] = None
+    overall_explanation: Optional[str] = None # New field
     choices:         List[ChoiceOut] = []
     created_at:      datetime
 

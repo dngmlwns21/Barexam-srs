@@ -54,8 +54,10 @@ class OXCardOut(BaseModel):
     choice_number: int
     statement: str
     is_correct: bool
-    legal_provision: Optional[str]
-    precedent: Optional[str]
+    legal_basis: Optional[str] # Changed from legal_provision
+    case_citation: Optional[str] # Changed from precedent
+    explanation_core: Optional[str] # New field
+    keywords: Optional[List[str]] # New field
     theory: Optional[str]
     is_revised: bool
     revision_note: Optional[str]
@@ -116,8 +118,10 @@ async def get_mock_cards(
                     choice_number=stmt["choice_number"],
                     statement=stmt["statement"],
                     is_correct=stmt["is_correct"],
-                    legal_provision=stmt.get("legal_provision"),
-                    precedent=stmt.get("precedent"),
+                    legal_basis=stmt.get("legal_basis"), # Changed from legal_provision
+                    case_citation=stmt.get("case_citation"), # Changed from precedent
+                    explanation_core=stmt.get("explanation_core"), # New field
+                    keywords=stmt.get("keywords", []), # New field
                     theory=stmt.get("theory"),
                     is_revised=bool(stmt.get("is_revised", False)),
                     revision_note=stmt.get("revision_note"),

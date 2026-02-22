@@ -17,6 +17,8 @@ interface OXCard {
   is_correct: boolean;
   legal_basis: string | null;
   case_citation: string | null;
+  explanation_core: string | null; // New field
+  keywords: string[]; // New field
   theory: string | null;
   is_revised: boolean;
   revision_note: string | null;
@@ -66,12 +68,8 @@ export default function StudySession() {
     fetch(url)
       .then((r) => r.json())
       .then((data: any[]) => {
-        const mappedData = data.map(item => ({
-          ...item,
-          legal_basis: item.legal_provision,
-          case_citation: item.precedent,
-        }));
-        setCards(mappedData as OXCard[]);
+        // No longer need to map legal_provision/precedent as backend now sends legal_basis/case_citation
+        setCards(data as OXCard[]);
       })
       .finally(() => setLoading(false));
   }, [subject]);
@@ -245,17 +243,29 @@ export default function StudySession() {
               </span>
             </div>
 
-            {/* Explanation */}
+            {/* Explanation Core */}
+            {card.explanation_core && (
+              <div className="rounded-2xl bg-white p-5 shadow-sm">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                  핵심 해설
+                </p>
+                <p className="text-sm leading-relaxed text-gray-700">
+                  {card.explanation_core}
+                </p>
+              </div>
+            )}
+
+            {/* Full Explanation */}
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                해설
+                상세 해설
               </p>
               <p className="text-sm leading-relaxed text-gray-700">
                 {card.explanation}
               </p>
             </div>
 
-            {/* Union Textbook Style citations */}
+            {/* Legal Citations & Theory */}
             {(card.legal_basis || card.case_citation || card.theory) && (
               <div className="rounded-2xl bg-white p-5 shadow-sm space-y-2.5">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
@@ -289,6 +299,22 @@ export default function StudySession() {
                     <span className="text-sm text-gray-700">{card.theory}</span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Keywords */}
+            {card.keywords && card.keywords.length > 0 && (
+              <div className="rounded-2xl bg-white p-5 shadow-sm">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                  키워드
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {card.keywords.map((keyword, idx) => (
+                    <span key={idx} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 

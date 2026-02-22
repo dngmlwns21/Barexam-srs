@@ -181,6 +181,8 @@ function _mockCardToDue(oxCard) {
       id: `${oxCard.raw_id}-${oxCard.letter}`,
       stem: '',  // OX statements are self-contained — no garbled PDF stem
       explanation: oxCard.explanation,
+      overall_explanation: oxCard.overall_explanation, // New field
+      keywords: oxCard.keywords, // New field
       is_outdated: oxCard.is_outdated,
       needs_revision: oxCard.is_revised,
       source_name: oxCard.source,
@@ -194,6 +196,10 @@ function _mockCardToDue(oxCard) {
       content: oxCard.statement,  // clean LLM-rewritten standalone statement
       is_correct: oxCard.is_correct,
       choice_number: oxCard.choice_number,
+      legal_basis: oxCard.legal_basis, // New field
+      case_citation: oxCard.case_citation, // New field
+      explanation_core: oxCard.explanation_core, // New field
+      keywords: oxCard.keywords, // New field
     },
     _ox: oxCard, // keep original for rich result display
   };
@@ -885,26 +891,19 @@ function renderResult() {
     `;
   }
 
-  // Explanation — always shown
-  const explanation = isOX ? q.explanation : S.revealData.explanation;
-
-  // Rich metadata from mock OX card
-  const oxRaw = card._ox;
-  const richMeta = (isOX && oxRaw) ? (() => {
-    const imp = { A: '🔴 A 핵심', B: '🟡 B 표준', C: '⚪ C 주변' }[oxRaw.importance] || oxRaw.importance;
-    const items = [];
-    if (oxRaw.importance) items.push(`<span class="ox-meta-badge ox-importance-${oxRaw.importance}">${imp}</span>`);
-    if (oxRaw.legal_provision) items.push(`<span class="ox-meta-badge ox-provision">📖 ${esc(oxRaw.legal_provision)}</span>`);
-    if (oxRaw.precedent)       items.push(`<span class="ox-meta-badge ox-precedent">⚖️ ${esc(oxRaw.precedent)}</span>`);
-    if (oxRaw.theory)          items.push(`<span class="ox-meta-badge ox-theory">💡 ${esc(oxRaw.theory)}</span>`);
-    if (oxRaw.is_revised && oxRaw.revision_note) items.push(`<div class="ox-revision-note">⚠️ 개정: ${esc(oxRaw.revision_note)}</div>`);
-    return items.length ? `<div class="ox-meta-row">${items.join('')}</div>` : '';
-  })() : '';
-
-  const explanationHtml = `
+  // Explanation Core (for OX cards)
+  const explanationCoreHtml = (isOX && card.choice.explanation_core) ? `
     <div class="explanation">
-      <div class="explanation-title">해설</div>
-      ${richMeta}
+      <div class="explanation-title">핵심 해설</div>
+      <div class="explanation-text">${fmt(card.choice.explanation_core)}</div>
+    </div>
+  ` : '';
+
+  // Full Explanation
+  const explanation = isOX ? q.explanation : S.revealData.explanation;
+  const fullExplanationHtml = `
+    <div class="explanation">
+      <div class="explanation-title">상세 해설</div>
       <div class="explanation-text">${
         explanation
           ? fmt(explanation)
@@ -912,6 +911,29 @@ function renderResult() {
       }</div>
     </div>
   `;
+
+  // Rich metadata from mock OX card
+  const oxRaw = card._ox;
+  const richMeta = (isOX && oxRaw) ? (() => {
+    const imp = { A: '🔴 A 핵심', B: '🟡 B 표준', C: '⚪ C 주변' }[oxRaw.importance] || oxRaw.importance;
+    const items = [];
+    if (oxRaw.importance) items.push(`<span class="ox-meta-badge ox-importance-${oxRaw.importance}">${imp}</span>`);
+    if (oxRaw.legal_basis) items.push(`<span class="ox-meta-badge ox-provision">📖 ${esc(oxRaw.legal_basis)}</span>`); // Changed from legal_provision
+    if (oxRaw.case_citation) items.push(`<span class="ox-meta-badge ox-precedent">⚖️ ${esc(oxRaw.case_citation)}</span>`); // Changed from precedent
+    if (oxRaw.theory)          items.push(`<span class="ox-meta-badge ox-theory">💡 ${esc(oxRaw.theory)}</span>`);
+    if (oxRaw.is_revised && oxRaw.revision_note) items.push(`<div class="ox-revision-note">⚠️ 개정: ${esc(oxRaw.revision_note)}</div>`);
+    return items.length ? `<div class="ox-meta-row">${items.join('')}</div>` : '';
+  })() : '';
+
+  // Keywords (for OX cards)
+  const keywordsHtml = (isOX && card.choice.keywords && card.choice.keywords.length > 0) ? `
+    <div class="keywords-section">
+      <div class="keywords-title">키워드</div>
+      <div class="keywords-list">
+        ${card.choice.keywords.map(k => `<span class="keyword-chip">${esc(k)}</span>`).join('')}
+      </div>
+    </div>
+  ` : '';
 
   // Tags
   const tagsHtml = (q.tags && q.tags.length > 0) ? `
@@ -973,7 +995,10 @@ function renderResult() {
         ${warningBadge}
         <div class="question-text">${fmt(q.stem)}</div>
         ${answerSection}
-        ${explanationHtml}
+        ${richMeta}
+        ${explanationCoreHtml}
+        ${fullExplanationHtml}
+        ${keywordsHtml}
         ${tagsHtml}
         ${peerHtml}
         ${noteHtml}

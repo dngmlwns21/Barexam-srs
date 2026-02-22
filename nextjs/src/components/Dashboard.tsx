@@ -34,10 +34,10 @@ export default function Dashboard() {
   const overallDeck = decks.find((d) => d.subject_id === null);
   const subjectDecks = decks.filter((d) => d.subject_id !== null);
 
-  const totalCards = overallDeck?.total_cards ?? 0;
   const totalNew = overallDeck?.new_count ?? 0;
   const totalLearning = overallDeck?.learning_count ?? 0;
   const totalReview = overallDeck?.review_count ?? 0;
+  const totalCards = totalNew + totalLearning + totalReview; // Adjusted to reflect actual counts
 
   if (loading) {
     return (

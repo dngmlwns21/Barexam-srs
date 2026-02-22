@@ -113,6 +113,7 @@ class Question(Base):
     stem:           Mapped[str]           = mapped_column(Text, nullable=False)
     correct_choice: Mapped[int]           = mapped_column(SmallInteger, nullable=False)
     explanation:    Mapped[Optional[str]] = mapped_column(Text)
+    overall_explanation: Mapped[Optional[str]] = mapped_column(Text) # New field
 
     tags: Mapped[List[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default="{}"
@@ -125,7 +126,7 @@ class Question(Base):
     total_attempts:   Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     correct_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True) # Existing field
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -170,6 +171,7 @@ class Choice(Base):
     legal_basis: Mapped[Optional[str]] = mapped_column(String)
     case_citation: Mapped[Optional[str]] = mapped_column(String)
     explanation_core: Mapped[Optional[str]] = mapped_column(Text)
+    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True) # New field
 
     __table_args__ = (
         UniqueConstraint("question_id", "choice_number"),
