@@ -80,6 +80,9 @@ const api = {
   get(path)        { return api.request('GET',  path); },
   post(path, body) { return api.request('POST', path, body); },
   put(path, body)  { return api.request('PUT',  path, body); },
+  getMockTest(numCards = 20) {
+    return api.get(`/mock/mock-test?num_cards=${numCards}`);
+  },
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -307,6 +310,7 @@ async function showHome() {
   S.card       = null;
   S.chosen     = null;
   S.revealData = null;
+  S.mockTest   = null;
 
   showLoading();
   document.getElementById('login-screen').hidden = true;
@@ -453,6 +457,10 @@ function renderHome() {
       ${statsStrip}
       ${quickScanSection}
       ${deckSection}
+
+      <div class="mock-test-section" style="padding: 16px; border-top: 1px solid #e0e0e0;">
+        <button class="btn-cta" onclick="startMockTest()">📝 모의고사 시작 (20문제)</button>
+      </div>
     </div>
   `;
 
@@ -1697,4 +1705,139 @@ function renderQSCard() {
   } else {
     showLogin();
   }
-})();
+// ── Mock Test ────────────────────────────────────────────────────────────────
+async function startMockTest() {
+  S.screen = 'mock-test';
+  hideBottomNav();
+  showLoading();
+
+  try {
+    const cards = await api.getMockTest(20);
+    if (!cards || cards.length === 0) {
+      showHome();
+      alert('모의고사를 생성할 카드가 충분하지 않습니다.');
+      return;
+    }
+    S.mockTest = {
+      cards: cards,
+      index: 0,
+      answers: new Array(cards.length).fill(null),
+    };
+    hideLoading();
+    renderMockTestQuestion();
+  } catch (err) {
+    console.error('Error starting mock test:', err);
+    hideLoading();
+    showHome();
+    alert('모의고사를 시작하는 중 오류가 발생했습니다.');
+  }
+}
+
+function renderMockTestQuestion() {
+  const { cards, index, answers } = S.mockTest;
+  const card = cards[index];
+  const q = card.question;
+  const userAnswer = answers[index];
+
+  const progress = `${index + 1} / ${cards.length}`;
+
+  let html = `
+    <div class="study">
+      <div class="study-header">
+        <button class="btn-back" onclick="showHome()">← 홈</button>
+        <div class="study-meta">모의고사</div>
+        <div class="session-count">${progress}</div>
+      </div>
+      <div class="question-card" style="padding-bottom: 120px;">
+        <div class="question-text">${fmt(q.stem)}</div>
+        <div class="ox-statement" style="margin-top: 16px;">
+          <div class="ox-statement-text">${fmt(card.choice.content)}</div>
+        </div>
+      </div>
+      <div class="rating-bar" style="position: fixed; bottom: 0; left: 0; right: 0;">
+        <div class="rating-btns" style="justify-content: center;">
+          <button class="btn-ox btn-ox-o ${userAnswer === 'O' ? 'selected' : ''}" style="width: 80px; height: 80px;" onclick="selectMockAnswer('O')">O</button>
+          <button class="btn-ox btn-ox-x ${userAnswer === 'X' ? 'selected' : ''}" style="width: 80px; height: 80px;" onclick="selectMockAnswer('X')">X</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 10px 20px; align-items: center;">
+          <button onclick="navigateMockTest(-1)" class="btn-rating" ${index === 0 ? 'disabled' : ''}>이전</button>
+          <button onclick="showMockTestSummary()" class="btn-rating btn-good">채점하기</button>
+          <button onclick="navigateMockTest(1)" class="btn-rating" ${index === cards.length - 1 ? 'disabled' : ''}>다음</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('dynamic-screen').innerHTML = html;
+}
+
+function selectMockAnswer(answer) {
+  S.mockTest.answers[S.mockTest.index] = answer;
+  // Automatically move to the next question
+  if (S.mockTest.index < S.mockTest.cards.length - 1) {
+    navigateMockTest(1);
+  } else {
+    renderMockTestQuestion(); // Rerender to show selection on last question
+  }
+}
+
+function navigateMockTest(direction) {
+  const newIndex = S.mockTest.index + direction;
+  if (newIndex >= 0 && newIndex < S.mockTest.cards.length) {
+    S.mockTest.index = newIndex;
+    renderMockTestQuestion();
+  }
+}
+
+function showMockTestSummary() {
+  const { cards, answers } = S.mockTest;
+  let correctCount = 0;
+
+  const resultsHtml = cards.map((card, i) => {
+    const correctAnswer = card.choice.is_correct ? 'O' : 'X';
+    const userAnswer = answers[i];
+    const isCorrect = userAnswer === correctAnswer;
+    if (isCorrect) correctCount++;
+
+    return `
+      <div class="review-item" style="background: ${isCorrect ? 'var(--bg-correct)' : 'var(--bg-wrong)'};">
+        <div class="review-stem"><b>Q${i + 1}.</b> ${esc(card.question.stem)}</div>
+        <div class="review-stem" style="padding-left: 1.5em;">${esc(card.choice.content)}</div>
+        <div class="review-meta">
+          <span>제출: ${userAnswer || '미응답'}</span>
+          <span>정답: ${correctAnswer}</span>
+          <span class="review-correct ${isCorrect ? 'correct' : 'wrong'}">${isCorrect ? '✓' : '✗'}</span>
+        </div>
+        ${!isCorrect && card.question.explanation ? `<div class="explanation" style="margin-top: 8px; font-size: 0.8em;">${fmt(card.question.explanation)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const score = `${correctCount} / ${cards.length}`;
+  const scorePercent = cards.length > 0 ? Math.round((correctCount / cards.length) * 100) : 0;
+
+  let html = `
+    <div class="mypage-v2">
+      <div class="home-topbar" style="margin-bottom:16px">
+        <span class="home-topbar-title">📝 모의고사 결과</span>
+      </div>
+      <div class="mypage-content">
+        <div class="stat-big-card">
+          <div class="stat-big-label">총점</div>
+          <div class="stat-big-value">${scorePercent}점</div>
+          <div class="stat-big-sub">${score}</div>
+        </div>
+        <div class="review-list">${resultsHtml}</div>
+        <button class="btn-cta" style="margin-top: 24px;" onclick="showHome()">홈으로 돌아가기</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('dynamic-screen').innerHTML = html;
+  S.screen = 'home';
+  showBottomNav();
+  setActiveTab('home');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async function init() {

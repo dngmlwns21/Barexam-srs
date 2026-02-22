@@ -10,8 +10,14 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+
+from ..database import get_db
+from ..models import Choice, Question
+from ..schemas import ChoiceOut, QuestionCardOut
 
 router = APIRouter()
 
@@ -56,6 +62,11 @@ class OXCardOut(BaseModel):
     importance: str
     explanation: str
     is_outdated: bool
+
+
+class MockTestCardOut(BaseModel):
+    question: QuestionCardOut
+    choice: ChoiceOut
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -116,3 +127,32 @@ async def get_mock_cards(
                 )
             )
     return flat[:limit]
+
+
+@router.get("/mock-test", response_model=list[MockTestCardOut])
+async def get_mock_test(
+    subject_id: int | None = None,
+    num_cards: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """
+    지정된 수의 무작위 OX 카드로 모의고사를 생성합니다.
+    OX 카드는 문제와 그에 속한 선택지 하나가 조합된 형태입니다.
+    """
+    query = db.query(Choice).options(joinedload(Choice.question).joinedload(Question.subject))
+
+    if subject_id:
+        query = query.join(Question).filter(Question.subject_id == subject_id)
+
+    # 데이터베이스에서 효율적으로 무작위 선택지를 가져옵니다.
+    random_choices = query.order_by(func.random()).limit(num_cards).all()
+
+    if not random_choices:
+        return []
+
+    # MockTestCardOut 객체들을 구성합니다.
+    mock_test_cards = [
+        MockTestCardOut(question=choice.question, choice=choice) for choice in random_choices
+    ]
+
+    return mock_test_cards
