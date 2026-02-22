@@ -113,7 +113,7 @@ class Question(Base):
     stem:           Mapped[str]           = mapped_column(Text, nullable=False)
     correct_choice: Mapped[int]           = mapped_column(SmallInteger, nullable=False)
     explanation:    Mapped[Optional[str]] = mapped_column(Text)
-    overall_explanation: Mapped[Optional[str]] = mapped_column(Text) # New field
+    overall_explanation: Mapped[Optional[str]] = mapped_column(Text)
 
     tags: Mapped[List[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default="{}"
@@ -126,7 +126,12 @@ class Question(Base):
     total_attempts:   Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     correct_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True) # Existing field
+    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+    
+    # Phase 2: Added requested fields to Question (for non-MCQ compatibility)
+    legal_basis:      Mapped[Optional[str]] = mapped_column(String)
+    case_citation:    Mapped[Optional[str]] = mapped_column(String)
+    explanation_core: Mapped[Optional[str]] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -168,10 +173,11 @@ class Choice(Base):
     content:       Mapped[str]  = mapped_column(Text, nullable=False)
     is_correct:    Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    legal_basis: Mapped[Optional[str]] = mapped_column(String)
-    case_citation: Mapped[Optional[str]] = mapped_column(String)
+    # Phase 2: Refactored Card Model fields
+    legal_basis:      Mapped[Optional[str]] = mapped_column(String)
+    case_citation:    Mapped[Optional[str]] = mapped_column(String)
     explanation_core: Mapped[Optional[str]] = mapped_column(Text)
-    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True) # New field
+    keywords:         Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("question_id", "choice_number"),

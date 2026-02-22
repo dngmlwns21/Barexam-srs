@@ -1,22 +1,23 @@
 #!/bin/bash
+# Phase 4: Data Execution Script (Bash)
+echo "Starting Auto-Deployment Sequence..."
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
+# 1. Run Data Pipeline
+echo "Running Data Pipeline (Mock Exam 87)..."
+python -m data_pipeline.pipeline mock --idx-min 87 --idx-max 87 --wipe
+if [ $? -ne 0 ]; then
+    echo "Pipeline failed"
+    exit 1
+fi
 
-echo "--- 1. Running data pipeline to generate new cards (idx 87) ---"
-python -m pipeline.pipeline mock --idx-min 87 --idx-max 87
-
-echo ""
-echo "--- 2. Staging all changes ---"
+# 2. Git Operations
+echo "Staging files..."
 git add .
 
-echo ""
-echo "--- 3. Committing changes ---"
+echo "Committing..."
 git commit -m "Auto-deploy: UI/UX overhaul, RAG pipeline integration, and new card generation"
 
-echo ""
-echo "--- 4. Pushing to main to trigger Render.com deployment ---"
+echo "Pushing to origin..."
 git push origin main
 
-echo ""
-echo "--- ✅ Deployment triggered successfully! ---"
+echo "Deployment Triggered Successfully!"

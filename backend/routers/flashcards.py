@@ -5,42 +5,16 @@ from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import queries
 from ..dependencies import get_current_user, get_db
-from ..models import Flashcard, Question, ReviewLog, UserProgress
+from ..models import Flashcard, Question, UserProgress
 from ..schemas import DueCardOut
 from ..sm2 import parse_steps
 from ..utils import build_due_card_out, up_load_opts
 
 router = APIRouter()
-
-
-async def _count_new_today(db: AsyncSession, user_id: uuid.UUID, today_start: datetime) -> int:
-    """Count flashcards introduced from 'new' state today."""
-    result = await db.execute(
-        select(func.count(func.distinct(ReviewLog.flashcard_id)))
-        .where(
-            ReviewLog.user_id == user_id,
-            ReviewLog.reviewed_at >= today_start,
-            ReviewLog.prev_card_state == "new",
-        )
-    )
-    return result.scalar() or 0
-
-
-async def _count_review_today(db: AsyncSession, user_id: uuid.UUID, today_start: datetime) -> int:
-    """Count distinct 'review'-state flashcards reviewed today."""
-    result = await db.execute(
-        select(func.count(func.distinct(ReviewLog.flashcard_id)))
-        .where(
-            ReviewLog.user_id == user_id,
-            ReviewLog.reviewed_at >= today_start,
-            ReviewLog.prev_card_state == "review",
-        )
-    )
-    return result.scalar() or 0
 
 
 @router.get("/due", response_model=List[DueCardOut])
@@ -58,8 +32,8 @@ async def get_due_cards(
     today       = date.today()
     today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
 
-    new_today    = await _count_new_today(db, current_user.id, today_start)
-    review_today = await _count_review_today(db, current_user.id, today_start)
+    new_today    = await queries.count_new_today(db, current_user.id, today_start)
+    review_today = await queries.count_review_today(db, current_user.id, today_start)
 
     new_remaining    = max(0, (current_user.daily_new_limit    or 20)  - new_today)
     review_remaining = max(0, (current_user.daily_review_limit or 200) - review_today)

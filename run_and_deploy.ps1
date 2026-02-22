@@ -1,20 +1,19 @@
-# Stop script on any error
-$ErrorActionPreference = "Stop"
+# Phase 4: Data Execution Script (PowerShell)
+Write-Host "Starting Auto-Deployment Sequence..."
 
-Write-Host "--- 1. Running data pipeline to generate new cards (idx 87) ---"
-python -m pipeline.pipeline mock --idx-min 87 --idx-max 87
+# 1. Run Data Pipeline (Small Batch)
+Write-Host "Running Data Pipeline (Mock Exam 87)..."
+python -m data_pipeline.pipeline mock --idx-min 87 --idx-max 87 --wipe
+if ($LASTEXITCODE -ne 0) { Write-Error "Pipeline failed"; exit 1 }
 
-Write-Host ""
-Write-Host "--- 2. Staging all changes ---"
+# 2. Git Operations
+Write-Host "Staging files..."
 git add .
 
-Write-Host ""
-Write-Host "--- 3. Committing changes ---"
+Write-Host "Committing..."
 git commit -m "Auto-deploy: UI/UX overhaul, RAG pipeline integration, and new card generation"
 
-Write-Host ""
-Write-Host "--- 4. Pushing to main to trigger Render.com deployment ---"
+Write-Host "Pushing to origin..."
 git push origin main
 
-Write-Host ""
-Write-Host "--- ✅ Deployment triggered successfully! ---"
+Write-Host "Deployment Triggered Successfully!"

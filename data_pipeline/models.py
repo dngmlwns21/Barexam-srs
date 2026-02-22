@@ -20,41 +20,6 @@ class ImportanceGrade(str, Enum):
     C = "C"  # 주변: 가끔 출제
 
 
-# Subject canonical names (matches subjects table)
-SUBJECT_ALIASES: Dict[str, str] = {
-    "민법":       "민법",
-    "민사법":     "민법",
-    "민사소송법": "민사소송법",
-    "민사집행법": "민사소송법",
-    "가족법":     "가족법",
-    "친족상속법": "가족법",
-    "상법":       "상법",
-    "형법":       "형법",
-    "형사소송법": "형사소송법",
-    "형사특별법": "형사특별법",
-    "행정법":     "행정법",
-    "헌법":       "헌법",
-    "법조윤리":   "법조윤리",
-    # Electives
-    "국제법":     "국제법",
-    "국제사법":   "국제사법",
-    "노동법":     "노동법",
-    "조세법":     "조세법",
-    "지식재산권법": "지식재산권법",
-    "경제법":     "경제법",
-    "환경법":     "환경법",
-}
-
-# Korean bar exam subject range: (first_q, last_q) per subject block
-# 변호사시험 공통 배점표 (1교시/2교시)
-BAR_EXAM_SUBJECT_MAP: List[tuple] = [
-    # (start, end, subject)
-    (1,  40,  "헌법"),
-    (41, 80,  "민법"),
-    (81, 120, "형법"),
-]
-
-# Letters for OX statements
 OX_LETTERS = ["가", "나", "다", "라", "마"]
 
 
@@ -77,6 +42,9 @@ class RawQuestion(BaseModel):
     needs_revision: bool           = False
     source_file:    Optional[str]  = None
 
+    class Config:
+        populate_by_name = True
+
 
 # ── LLM output models ─────────────────────────────────────────────────────────
 
@@ -86,8 +54,13 @@ class OXStatement(BaseModel):
     choice_number:    int                    # 1–5 (original MCQ choice)
     statement:        str                    # Standalone O/X proposition
     is_correct:       bool                   # True=O (correct), False=X (wrong)
-    legal_provision:  Optional[str] = None   # 관련 조문 e.g. "민법 제390조"
-    precedent:        Optional[str] = None   # 판례 e.g. "대법원 2022.12.29. 선고 2022다1234 판결"
+    
+    # Updated fields for Union Textbook Style
+    legal_basis:      Optional[str] = None   # 관련 조문 (was legal_provision)
+    case_citation:    Optional[str] = None   # 판례 (was precedent)
+    explanation_core: Optional[str] = None   # 핵심 해설 (New)
+    keywords:         List[str]     = Field(default_factory=list) # 키워드 (New)
+    
     theory:           Optional[str] = None   # 학설
     is_revised:       bool          = False  # 최근 개정/판례 변경 여부
     revision_note:    Optional[str] = None   # 개정 내용
