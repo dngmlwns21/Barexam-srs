@@ -379,6 +379,15 @@ function renderHome() {
     </div>
   `;
 
+  const quickScanSection = `
+    <div class="qs-section-header" style="margin: 24px 0 8px;">⚡ 빠른 복습 (시험 직전 모드)</div>
+    <div class="qs-mode-cards">
+      <button class="qs-mode-btn" data-mode="failure">📉<span>오답 집중</span><small>최근에 틀린 문제</small></button>
+      <button class="qs-mode-btn" data-mode="newest">🆕<span>최신 문제</span><small>최근 추가된 문제</small></button>
+      <button class="qs-mode-btn" data-mode="favorites">⭐<span>즐겨찾기</span><small>별표 표시 카드</small></button>
+    </div>
+  `;
+
   // OX Deck table (from mock API)
   function deckRow(subject, n, lrn, rev, isOverall) {
     return `
@@ -442,6 +451,7 @@ function renderHome() {
       </div>
 
       ${statsStrip}
+      ${quickScanSection}
       ${deckSection}
     </div>
   `;
@@ -454,6 +464,9 @@ function renderHome() {
       const subj = btn.dataset.mockSubject;
       startMockStudy(subj === '전체 OX 카드' ? null : subj);
     });
+  });
+  document.querySelectorAll('.qs-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => showQuickScan(btn.dataset.mode));
   });
 }
 
@@ -527,12 +540,6 @@ function renderStudyList() {
       </div>
       <div style="margin-bottom:16px;">${overallCard}</div>
       ${subjectCards}
-      <div class="qs-section-header">⚡ 빠른 복습 (시험 직전 모드)</div>
-      <div class="qs-mode-cards">
-        <button class="qs-mode-btn" data-mode="failure">📉<span>오답 집중</span><small>틀린 적 많은 문제</small></button>
-        <button class="qs-mode-btn" data-mode="newest">🆕<span>최신 문제</span><small>최근 추가된 문제</small></button>
-        <button class="qs-mode-btn" data-mode="favorites">⭐<span>즐겨찾기</span><small>별표 표시 카드</small></button>
-      </div>
     </div>
   `;
 
@@ -541,9 +548,6 @@ function renderStudyList() {
       S.activeSubjectId = btn.dataset.id || null;
       startStudy();
     });
-  });
-  document.querySelectorAll('.qs-mode-btn').forEach(btn => {
-    btn.addEventListener('click', () => showQuickScan(btn.dataset.mode));
   });
 }
 
