@@ -1695,42 +1695,6 @@ function renderQSCard() {
   });
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-(async function init() {
-  // FIX M-8: sync dark mode class on body (html class set by inline script in <head>)
-  if (localStorage.getItem('dark_mode') === '1') {
-    document.body.classList.add('dark-mode');
-  }
-
-  // Wire up login tab buttons
-  document.getElementById('tab-login').addEventListener('click', () => {
-    _authMode = 'login';
-    renderLogin();
-  });
-  document.getElementById('tab-register').addEventListener('click', () => {
-    _authMode = 'register';
-    renderLogin();
-  });
-  document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
-
-  // Wire up bottom navigation
-  document.getElementById('nav-home').addEventListener('click', showHome);
-  document.getElementById('nav-study').addEventListener('click', showStudyList);
-  document.getElementById('nav-mypage').addEventListener('click', () => showMyPage());
-
-  // FIX L-5: wire help modal close button
-  document.getElementById('help-close').addEventListener('click', hideHelpModal);
-  document.getElementById('help-modal').addEventListener('click', e => {
-    if (e.target === document.getElementById('help-modal')) hideHelpModal();
-  });
-
-  if (tokens.exists()) {
-    await showHome();
-    // FIX L-3: update last_synced_at silently
-    api.post('/users/me/sync', {}).catch(() => {});
-  } else {
-    showLogin();
-  }
 // ── Mock Test ────────────────────────────────────────────────────────────────
 async function startMockTest() {
   S.screen = 'mock-test';
@@ -1867,3 +1831,37 @@ function showMockTestSummary() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init() {
+  // FIX M-8: sync dark mode class on body (html class set by inline script in <head>)
+  if (localStorage.getItem('dark_mode') === '1') {
+    document.body.classList.add('dark-mode');
+  }
+
+  // Wire up login tab buttons
+  document.getElementById('tab-login').addEventListener('click', () => {
+    _authMode = 'login';
+    renderLogin();
+  });
+  document.getElementById('tab-register').addEventListener('click', () => {
+    _authMode = 'register';
+    renderLogin();
+  });
+  document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
+
+  // Wire up bottom navigation
+  document.getElementById('nav-home').addEventListener('click', showHome);
+  document.getElementById('nav-study').addEventListener('click', showStudyList);
+  document.getElementById('nav-mypage').addEventListener('click', () => showMyPage());
+
+  // FIX L-5: wire help modal close button
+  document.getElementById('help-close').addEventListener('click', hideHelpModal);
+  document.getElementById('help-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('help-modal')) hideHelpModal();
+  });
+
+  if (tokens.exists()) {
+    await showHome();
+    // FIX L-3: update last_synced_at silently
+    api.post('/users/me/sync', {}).catch(() => {});
+  } else {
+    showLogin();
+  }
