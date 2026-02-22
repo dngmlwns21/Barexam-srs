@@ -120,6 +120,7 @@ const S = {
   isMockMode:     false,
   mockQueue:      [],   // OXCardOut[] (shuffled)
   mockIdx:        0,
+  mockTest:       null, // { cards, index, answers }
 };
 
 // ── Escape / format helpers ───────────────────────────────────────────────────
