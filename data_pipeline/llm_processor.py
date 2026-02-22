@@ -135,8 +135,7 @@ class MCQTransformer:
                 # Fetch first case for demo
                 text = await self._retriever.fetch_precedent(case_numbers[0])
                 if text:
-                    retrieved_context += f"Case {case_numbers[0]}: {text}
-"
+                    retrieved_context += f"Case {case_numbers[0]}: {text}\n"
 
             # 2. LLM Generation
             prompt = _build_prompt(q, retrieved_context)
