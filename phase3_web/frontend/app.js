@@ -175,7 +175,7 @@ function _mockCardToDue(oxCard) {
     sm2: { interval_days: 1, ease_factor: 2.5, repetitions: 0 },
     question: {
       id: `${oxCard.raw_id}-${oxCard.letter}`,
-      stem: oxCard.stem,
+      stem: '',  // OX statements are self-contained — no garbled PDF stem
       explanation: oxCard.explanation,
       is_outdated: oxCard.is_outdated,
       needs_revision: oxCard.is_revised,
@@ -187,7 +187,7 @@ function _mockCardToDue(oxCard) {
     },
     choice: {
       id: `${oxCard.raw_id}-${oxCard.letter}`,
-      content: `[${oxCard.letter}] ${oxCard.statement}`,
+      content: oxCard.statement,  // clean LLM-rewritten standalone statement
       is_correct: oxCard.is_correct,
       choice_number: oxCard.choice_number,
     },
@@ -735,7 +735,7 @@ function renderStudy() {
       <div class="question-card">
         ${warningBadge}
         ${card.personal_note ? `<div class="study-note-banner">📝 ${esc(card.personal_note)}</div>` : ''}
-        <div class="question-text">${fmt(q.stem)}</div>
+        ${q.stem ? `<div class="question-text">${fmt(q.stem)}</div>` : ''}
         ${choicesSection}
       </div>
     </div>
