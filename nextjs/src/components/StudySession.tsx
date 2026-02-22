@@ -45,6 +45,9 @@ export default function StudySession() {
   const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
+  const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const [tutorResponse, setTutorResponse] = useState("");
+  const [isTutorLoading, setIsTutorLoading] = useState(false);
 
   useEffect(() => {
     const url = subject
@@ -85,9 +88,33 @@ export default function StudySession() {
     return () => window.removeEventListener("keydown", onKey);
   }, [revealed, grade]);
 
-  const handleAiExplain = () => {
-    // Placeholder for AI Tutor
-    alert("AI Tutor: Analyzing this legal principle for you...");
+  const handleAiExplain = async () => {
+    if (!card) return;
+    setIsTutorOpen(true);
+    setIsTutorLoading(true);
+    setTutorResponse("");
+    try {
+      // This endpoint needs to be created on the backend (Phase 2)
+      const res = await fetch(`${API_BASE}/api/v1/chat/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          statement: card.statement,
+          explanation: card.explanation,
+          is_correct: card.is_correct,
+        }),
+      });
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error(`AI Tutor API failed: ${res.status} ${errorBody}`);
+      }
+      const data = await res.json();
+      setTutorResponse(data.explanation);
+    } catch (e) {
+      setTutorResponse(e instanceof Error ? e.message : "An unknown error occurred.");
+    } finally {
+      setIsTutorLoading(false);
+    }
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent"></div></div>;
@@ -174,6 +201,32 @@ export default function StudySession() {
             </div>
         )}
       </div>
+
+      {/* AI Tutor Modal */}
+      {isTutorOpen && (
+        <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">AI Tutor</h3>
+              <button onClick={() => setIsTutorOpen(false)} className="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div className="max-h-64 overflow-y-auto text-sm text-gray-700">
+              {isTutorLoading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="h-2 w-2 bg-blue-600 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                  <div className="h-2 w-2 bg-blue-600 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                  <div className="h-2 w-2 bg-blue-600 rounded-full animate-pulse"></div>
+                </div>
+              ) : (
+                <p className="whitespace-pre-wrap font-mono">{tutorResponse}</p>
+              )}
+            </div>
+            <button onClick={() => setIsTutorOpen(false)} className="mt-6 w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* FAB: AI Tutor */}
       <button 

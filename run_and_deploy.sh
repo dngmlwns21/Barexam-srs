@@ -4,7 +4,7 @@ echo "Starting Auto-Deployment Sequence..."
 
 # 1. Run Data Pipeline
 echo "Running Data Pipeline (Mock Exam 87)..."
-python -m data_pipeline.pipeline mock --idx-min 87 --idx-max 87 --wipe
+python -m data_pipeline.pipeline mock --idx-min 87 --idx-max 87
 if [ $? -ne 0 ]; then
     echo "Pipeline failed"
     exit 1

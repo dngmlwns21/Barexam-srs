@@ -85,24 +85,36 @@ def _build_prompt(q: RawQuestion, retrieved_context: Optional[str] = None) -> st
         f"  {OX_LETTERS[i-1]}({i}) {text}"
         for i, text in sorted(q.choices.items())
     )
-    context_section = ""
+    
+    context_block = ""
     if retrieved_context:
-        context_section = f"
+        context_block = f"""
+**CRITICAL: You MUST use the following retrieved legal text to ground your analysis. Do not use outside knowledge if this context is provided.**
 [RAG Context - Real Legal Texts]
 {retrieved_context}
-"
+[End of RAG Context]
+"""
 
-    return f"""Analyze this Korean Bar Exam Question.
-Context: {context_section}
-Question: {q.stem}
-Choices:
+    return f"""You are an expert legal analyst. Your task is to deconstruct a Korean Bar Exam multiple-choice question into five separate True/False (O/X) statements and provide a detailed, structured analysis for each.
+
+{context_block}
+
+**Source Question Analysis:**
+*   **Question Stem:** {q.stem}
+*   **Choices:**
 {choices_text}
-Correct Answer: {q.correct_choice}
+*   **Correct Answer:** Choice {q.correct_choice}
 
-Instructions:
-1. Split into 5 independent O/X statements.
-2. Use the provided RAG Context to verify facts.
-3. Fill all fields (legal_basis, case_citation, etc.).
+**Your Task:**
+1.  **Deconstruct:** Analyze each choice ({", ".join(OX_LETTERS[:len(q.choices)])}) and rephrase it as a standalone O/X statement.
+2.  **Verify:** Determine if each statement is True (O) or False (X).
+3.  **Justify:** For each statement, provide a rigorous legal justification.
+    *   If RAG Context is available, you **MUST** base your justification on it, citing specific parts.
+    *   Identify the core legal principle (`explanation_core`).
+    *   Cite the specific legal statute (`legal_basis`) or court case (`case_citation`) if applicable.
+    *   Extract 3-5 relevant `keywords`.
+4.  **Grade Importance:** Assign an importance grade (A, B, C) based on how fundamental the legal principle is.
+5.  **Submit:** Use the `submit_ox_analysis` tool with the complete, structured data for all statements.
 """
 
 class MCQTransformer:

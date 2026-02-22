@@ -68,8 +68,8 @@ export default function Dashboard() {
           <div className="grid grid-cols-[1fr_repeat(3,minmax(60px,auto))] items-center border-b border-gray-100 bg-gray-50 px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
             <span className="text-left">Deck</span>
             <span className="text-center text-blue-600">New</span>
-            <span className="text-center text-red-600">Lrn</span>
-            <span className="text-center text-green-600">Rev</span>
+            <span className="text-center text-red-600">Learn</span>
+            <span className="text-center text-green-600">Review</span>
           </div>
 
           {/* Overall Deck */}
