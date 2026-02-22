@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 import anthropic
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -34,6 +35,7 @@ from .models import (
     Source,
     TransformedQuestion,
 )
+from .legal_retriever import LegalRetriever
 
 load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
 
@@ -160,7 +162,7 @@ OX_TOOL = {
 
 # ── Prompt builder ────────────────────────────────────────────────────────────
 
-def _build_prompt(q: RawQuestion) -> str:
+def _build_prompt(q: RawQuestion, retrieved_context: Optional[str] = None) -> str:
     source_tag = "[변시]" if q.source == Source.BAR_EXAM else "[법전협]"
     session_info = (
         f"제{q.exam_session}회 변호사시험" if q.exam_session
@@ -173,6 +175,16 @@ def _build_prompt(q: RawQuestion) -> str:
     )
     correct_letter = OX_LETTERS[q.correct_choice - 1]
 
+    context_section = ""
+    if retrieved_context:
+        context_section = f"""
+[참고 자료]
+아래는 본 문제와 관련된 법령 및 판례입니다. 이 내용을 바탕으로 정확한 해설을 생성하세요.
+---
+{retrieved_context}
+---
+"""
+
     return f"""당신은 한국 변호사시험 전문 강사입니다. 아래 5지선다형 문제를 분석하여 각 선택지를 독립적인 O/X 명제로 변환하세요.
 
 [출처] {source_tag} {session_info} | {q.subject} | 문 {q.question_number}번
@@ -184,14 +196,16 @@ def _build_prompt(q: RawQuestion) -> str:
 {choices_text}
 
 [정답] {correct_letter}번 ({q.correct_choice}번) → 이 선택지의 법률적 명제는 O (정답)
-
+{context_section}
 [변환 지침]
 1. 각 선택지를 문제 지문에 의존하지 않는 독립적 O/X 명제로 재작성하세요.
    - 예: "甲은 ~ 할 수 있다" → "채무자가 [구체적 상황]인 경우 채권자는 ~ 할 수 있다."
-2. 법률 조문, 판례 번호는 정확히 인용하세요.
-3. 중요도: 반복 출제 핵심 쟁점=A, 정기 출제=B, 드문 쟁점=C
-4. 최근 법령 개정 또는 판례 변경으로 정답이 바뀔 수 있으면 is_revised=true로 설정하세요.
-5. 설명은 강사 수준으로 작성하되 한국어로 작성하세요.
+2. 법률 조문(legal_basis), 판례 번호(case_citation)는 정확히 인용하세요.
+3. 핵심 해설(explanation_core)은 O/X 판단의 가장 중요한 이유를 한 문장으로 요약하여 작성하세요.
+4. 키워드(keywords)는 3~5개의 핵심 법률 용어를 리스트로 제공하세요.
+5. 중요도: 반복 출제 핵심 쟁점=A, 정기 출제=B, 드문 쟁점=C
+6. 최근 법령 개정 또는 판례 변경으로 정답이 바뀔 수 있으면 is_revised=true로 설정하세요.
+7. 설명은 강사 수준으로 작성하되 한국어로 작성하세요.
 
 submit_ox_analysis 도구를 사용해 결과를 제출하세요."""
 
@@ -209,7 +223,9 @@ class MCQTransformer:
         key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not key:
             raise RuntimeError("ANTHROPIC_API_KEY not set")
-        self._client    = anthropic.Anthropic(api_key=key)
+        self._client = anthropic.AsyncClient(api_key=key)
+        self._http_client = httpx.AsyncClient(timeout=10.0)
+        self._retriever = LegalRetriever(self._http_client)
         self._semaphore = asyncio.Semaphore(concurrency)
 
     async def transform_question(self, q: RawQuestion) -> Optional[TransformedQuestion]:
@@ -217,8 +233,7 @@ class MCQTransformer:
         async with self._semaphore:
             for attempt in range(1, RETRY_LIMIT + 1):
                 try:
-                    loop   = asyncio.get_event_loop()
-                    result = await loop.run_in_executor(None, self._call_api, q)
+                    result = await self._call_api(q) # Direct await
                     return result
                 except anthropic.RateLimitError:
                     if attempt == RETRY_LIMIT:
@@ -237,11 +252,23 @@ class MCQTransformer:
                     return None
         return None
 
-    def _call_api(self, q: RawQuestion) -> TransformedQuestion:
-        """Synchronous API call — runs in a thread pool."""
-        prompt = _build_prompt(q)
+    async def _call_api(self, q: RawQuestion) -> TransformedQuestion:
+        """Asynchronous API call with RAG context."""
 
-        response = self._client.messages.create(
+        # RAG: Fetch context (simple placeholder logic)
+        # TODO: Implement more sophisticated logic to parse statute/precedent from question text
+        retrieved_context = ""
+        # A simple regex to find case numbers
+        case_numbers = re.findall(r"\b\d{4}다\d+\b", q.stem + " " + " ".join(q.choices.values()))
+        if case_numbers:
+            # Fetch the first found precedent for simplicity
+            precedent_text = await self._retriever.fetch_precedent(case_numbers[0])
+            if precedent_text:
+                retrieved_context += f"관련 판례 ({case_numbers[0]}):\n{precedent_text}\n\n"
+
+        prompt = _build_prompt(q, retrieved_context or None)
+
+        response = await self._client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
             tools=[OX_TOOL],
@@ -268,8 +295,10 @@ class MCQTransformer:
                         choice_number=stmt.get("choice_number", i + 1),
                         statement=stmt["statement"],
                         is_correct=bool(stmt["is_correct"]),
-                        legal_provision=stmt.get("legal_provision"),
-                        precedent=stmt.get("precedent"),
+                        legal_basis=stmt.get("legal_basis"), # Changed from legal_provision
+                        case_citation=stmt.get("case_citation"), # Changed from precedent
+                        explanation_core=stmt.get("explanation_core"), # New field
+                        keywords=stmt.get("keywords", []), # New field
                         theory=stmt.get("theory"),
                         is_revised=bool(stmt.get("is_revised", False)),
                         revision_note=stmt.get("revision_note"),
