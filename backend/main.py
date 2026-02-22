@@ -18,18 +18,12 @@ if sys.platform == "win32":
 
 from contextlib import asynccontextmanager
 
-from pathlib import Path
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 from .config import settings
 from .database import Base, engine
 from .routers import auth, cards, dashboard, flashcards, mock_cards, questions, reviews, stats, subjects, tags, users
-
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
 @asynccontextmanager
@@ -79,9 +73,3 @@ async def health():
     return {"status": "ok", "version": "4.0.0"}
 
 
-# ── Frontend static files ──────────────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
-@app.get("/", include_in_schema=False)
-async def serve_index():
-    return FileResponse(FRONTEND_DIR / "index.html")
