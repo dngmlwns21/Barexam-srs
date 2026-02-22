@@ -80,8 +80,7 @@ OX_TOOL = {
 }
 
 def _build_prompt(q: RawQuestion, retrieved_context: Optional[str] = None) -> str:
-    choices_text = "
-".join(
+    choices_text = "\n".join(
         f"  {OX_LETTERS[i-1]}({i}) {text}"
         for i, text in sorted(q.choices.items())
     )
