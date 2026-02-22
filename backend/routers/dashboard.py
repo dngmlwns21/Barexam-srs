@@ -5,11 +5,12 @@ from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import queries
 from ..dependencies import get_current_user, get_db
-from ..models import Flashcard, Question, ReviewLog, Subject, User, UserProgress
+from ..models import Flashcard, Question, Subject, User, UserProgress
 from ..schemas import DailyStatusOut, DeckStatsOut
 from ..utils import build_due_card_out, up_load_opts
 
@@ -21,30 +22,6 @@ router = APIRouter()
 def _today_start() -> datetime:
     t = date.today()
     return datetime(t.year, t.month, t.day, tzinfo=timezone.utc)
-
-
-async def _count_new_today(db: AsyncSession, user_id: uuid.UUID) -> int:
-    result = await db.execute(
-        select(func.count(func.distinct(ReviewLog.flashcard_id)))
-        .where(
-            ReviewLog.user_id == user_id,
-            ReviewLog.reviewed_at >= _today_start(),
-            ReviewLog.prev_card_state == "new",
-        )
-    )
-    return result.scalar() or 0
-
-
-async def _count_review_today(db: AsyncSession, user_id: uuid.UUID) -> int:
-    result = await db.execute(
-        select(func.count(func.distinct(ReviewLog.flashcard_id)))
-        .where(
-            ReviewLog.user_id == user_id,
-            ReviewLog.reviewed_at >= _today_start(),
-            ReviewLog.prev_card_state == "review",
-        )
-    )
-    return result.scalar() or 0
 
 
 # ── Daily status ──────────────────────────────────────────────────────────────
@@ -105,8 +82,8 @@ async def get_deck_stats(
     now  = datetime.now(timezone.utc)
     uid  = current_user.id
 
-    new_today    = await _count_new_today(db, uid)
-    review_today = await _count_review_today(db, uid)
+    new_today    = await queries.count_new_today(db, uid, _today_start())
+    review_today = await queries.count_review_today(db, uid, _today_start())
 
     new_remaining    = max(0, (current_user.daily_new_limit    or 20)  - new_today)
     review_remaining = max(0, (current_user.daily_review_limit or 200) - review_today)
