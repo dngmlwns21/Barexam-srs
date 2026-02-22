@@ -310,6 +310,7 @@ class DeckStatsOut(BaseModel):
     new_count:      int   # blue  — new cards available today
     learning_count: int   # red   — learning/lapsed due now
     review_count:   int   # green — review cards due today
+    total_cards:    int
 
 
 # ── Pagination ────────────────────────────────────────────────────────────────

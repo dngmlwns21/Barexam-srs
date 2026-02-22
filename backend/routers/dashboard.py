@@ -82,6 +82,16 @@ async def get_deck_stats(
     now  = datetime.now(timezone.utc)
     uid  = current_user.id
 
+    # 각 과목별 전체 카드 수 계산
+    total_cards_q = (
+        select(Question.subject_id, func.count().label("cnt"))
+        .select_from(Question)
+        .group_by(Question.subject_id)
+    )
+    total_cards_rows = (await db.execute(total_cards_q)).all()
+    total_cards_map = {str(r.subject_id): r.cnt for r in total_cards_rows}
+    grand_total_cards = sum(total_cards_map.values())
+
     new_today    = await queries.count_new_today(db, uid, _today_start())
     review_today = await queries.count_review_today(db, uid, _today_start())
 
@@ -154,6 +164,7 @@ async def get_deck_stats(
         new_count=min(new_total_raw, new_remaining),
         learning_count=lrn_total,
         review_count=min(rev_total_raw, review_remaining),
+        total_cards=grand_total_cards,
     ))
 
     # Per-subject rows
@@ -168,6 +179,7 @@ async def get_deck_stats(
             new_count=int(s_new * new_scale),
             learning_count=s_lrn,
             review_count=int(s_rev * rev_scale),
+            total_cards=total_cards_map.get(sid, 0),
         ))
 
     return out

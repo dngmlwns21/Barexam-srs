@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface Deck {
-  subject: string;
+  subject_id: string | null;
+  subject_name: string;
   new_count: number;
   learning_count: number;
   review_count: number;
-  total: number;
+  total_cards: number;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -20,7 +21,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/mock/decks`)
+    fetch(`${API_BASE}/api/v1/dashboard/deck-stats`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -30,10 +31,13 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const totalCards = decks.reduce((a, d) => a + d.total, 0);
-  const totalNew = decks.reduce((a, d) => a + d.new_count, 0);
-  const totalLearning = decks.reduce((a, d) => a + d.learning_count, 0);
-  const totalReview = decks.reduce((a, d) => a + d.review_count, 0);
+  const overallDeck = decks.find((d) => d.subject_id === null);
+  const subjectDecks = decks.filter((d) => d.subject_id !== null);
+
+  const totalCards = overallDeck?.total_cards ?? 0;
+  const totalNew = overallDeck?.new_count ?? 0;
+  const totalLearning = overallDeck?.learning_count ?? 0;
+  const totalReview = overallDeck?.review_count ?? 0;
 
   if (loading) {
     return (
@@ -50,7 +54,7 @@ export default function Dashboard() {
           <p className="text-red-500 font-semibold">API 연결 실패</p>
           <p className="text-sm text-gray-500 mt-1">{error}</p>
           <p className="text-xs text-gray-400 mt-3">
-            uvicorn phase4_api.main:app --reload --port 8000
+            uvicorn backend.main:app --reload --port 8000
           </p>
         </div>
       </div>
@@ -64,7 +68,7 @@ export default function Dashboard() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">변호사시험 SRS</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {totalCards}개 카드 · {decks.length}개 과목
+            {totalCards}개 카드 · {subjectDecks.length}개 과목
           </p>
         </div>
 
@@ -94,14 +98,16 @@ export default function Dashboard() {
             <span className="w-12 text-right text-xs font-semibold text-green-500">복습</span>
           </div>
 
-          {decks.map((deck, i) => {
+          {subjectDecks.map((deck, i) => {
             const hasCards =
               deck.new_count + deck.learning_count + deck.review_count > 0;
             return (
               <button
-                key={deck.subject}
+                key={deck.subject_id}
                 onClick={() =>
-                  router.push(`/study?subject=${encodeURIComponent(deck.subject)}`)
+                  router.push(
+                    `/study?subject=${encodeURIComponent(deck.subject_name)}`,
+                  )
                 }
                 disabled={!hasCards}
                 className={[
@@ -113,7 +119,7 @@ export default function Dashboard() {
                 ].join(" ")}
               >
                 <span className="flex-1 text-sm font-medium text-gray-800">
-                  {deck.subject}
+                  {deck.subject_name}
                 </span>
                 <span className="w-12 text-right text-sm font-bold text-blue-500">
                   {deck.new_count > 0 ? deck.new_count : ""}
@@ -128,7 +134,7 @@ export default function Dashboard() {
             );
           })}
 
-          {decks.length === 0 && (
+          {subjectDecks.length === 0 && (
             <div className="py-16 text-center text-sm text-gray-400">
               카드가 없습니다
             </div>
