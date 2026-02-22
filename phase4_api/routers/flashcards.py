@@ -1,91 +1,134 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from ..dependencies import get_current_user, get_db
-from ..models import Flashcard, Question, UserProgress
-from ..schemas import ChoiceOut, DueCardOut, QuestionOut, SM2StateOut
+from ..models import Flashcard, Question, ReviewLog, UserProgress
+from ..schemas import DueCardOut
+from ..sm2 import parse_steps
+from ..utils import build_due_card_out, up_load_opts
 
 router = APIRouter()
 
 
+async def _count_new_today(db: AsyncSession, user_id: uuid.UUID, today_start: datetime) -> int:
+    """Count flashcards introduced from 'new' state today."""
+    result = await db.execute(
+        select(func.count(func.distinct(ReviewLog.flashcard_id)))
+        .where(
+            ReviewLog.user_id == user_id,
+            ReviewLog.reviewed_at >= today_start,
+            ReviewLog.prev_card_state == "new",
+        )
+    )
+    return result.scalar() or 0
+
+
+async def _count_review_today(db: AsyncSession, user_id: uuid.UUID, today_start: datetime) -> int:
+    """Count distinct 'review'-state flashcards reviewed today."""
+    result = await db.execute(
+        select(func.count(func.distinct(ReviewLog.flashcard_id)))
+        .where(
+            ReviewLog.user_id == user_id,
+            ReviewLog.reviewed_at >= today_start,
+            ReviewLog.prev_card_state == "review",
+        )
+    )
+    return result.scalar() or 0
+
+
 @router.get("/due", response_model=List[DueCardOut])
 async def get_due_cards(
-    limit:        int             = Query(20, ge=1, le=100),
+    limit:        int                  = Query(20, ge=1, le=100),
     subject_id:   Optional[uuid.UUID] = Query(None),
-    starred_only: bool            = Query(False),
+    starred_only: bool                = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    now = datetime.now(timezone.utc)
-
-    # If vacation mode is on, return nothing (SM-2 frozen)
     if current_user.vacation_mode_enabled:
         return []
 
-    stmt = (
+    now         = datetime.now(timezone.utc)
+    today       = date.today()
+    today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+
+    new_today    = await _count_new_today(db, current_user.id, today_start)
+    review_today = await _count_review_today(db, current_user.id, today_start)
+
+    new_remaining    = max(0, (current_user.daily_new_limit    or 20)  - new_today)
+    review_remaining = max(0, (current_user.daily_review_limit or 200) - review_today)
+
+    base   = [UserProgress.user_id == current_user.id]
+    s_filt = []
+    if starred_only:
+        base.append(UserProgress.is_starred == True)  # noqa: E712
+    if subject_id:
+        s_filt.append(Question.subject_id == subject_id)
+
+    opts = up_load_opts()
+    result_rows: list = []
+
+    # ── Priority 1: learning / lapsed cards due now ───────────────────────────
+    stmt1 = (
         select(UserProgress)
         .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
-        .join(Question, Question.id == Flashcard.question_id)
-        .options(
-            selectinload(UserProgress.flashcard)
-            .selectinload(Flashcard.question)
-            .selectinload(Question.choices),
-            selectinload(UserProgress.flashcard)
-            .selectinload(Flashcard.choice),
-        )
+        .join(Question,  Question.id  == Flashcard.question_id)
+        .options(*opts)
         .where(
-            UserProgress.user_id == current_user.id,
-            UserProgress.next_review_at <= now,
+            *base, *s_filt,
+            UserProgress.card_state.in_(["learning", "lapsed"]),
+            UserProgress.learning_due_at <= now,
         )
+        .order_by(UserProgress.learning_due_at.asc())
+        .limit(limit)
     )
+    r1 = await db.execute(stmt1)
+    result_rows.extend(r1.scalars().all())
 
-    if starred_only:
-        stmt = stmt.where(UserProgress.is_starred == True)
-    if subject_id:
-        stmt = stmt.where(Question.subject_id == subject_id)
-
-    stmt = stmt.order_by(UserProgress.next_review_at.asc()).limit(limit)
-    result = await db.execute(stmt)
-    progress_rows = result.scalars().all()
-
-    out = []
-    for up in progress_rows:
-        fc = up.flashcard
-        q  = fc.question
-
-        q_out = QuestionOut.model_validate(q)
-        choice_out = ChoiceOut.model_validate(fc.choice) if fc.choice else None
-
-        sm2_out = SM2StateOut(
-            ease_factor=float(up.ease_factor),
-            interval_days=float(up.interval_days),
-            repetitions=up.repetitions,
-            next_review_at=up.next_review_at,
-            last_reviewed_at=up.last_reviewed_at,
-            last_rating=up.last_rating,
-        )
-
-        out.append(
-            DueCardOut(
-                flashcard_id=fc.id,
-                type=fc.type,
-                question=q_out,
-                choice=choice_out,
-                sm2=sm2_out,
-                personal_note=up.personal_note,
-                is_starred=up.is_starred,
+    # ── Priority 2: review cards due (daily limit) ────────────────────────────
+    if len(result_rows) < limit and review_remaining > 0:
+        rev_lim = min(limit - len(result_rows), review_remaining)
+        stmt2 = (
+            select(UserProgress)
+            .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
+            .join(Question,  Question.id  == Flashcard.question_id)
+            .options(*opts)
+            .where(
+                *base, *s_filt,
+                UserProgress.card_state == "review",
+                UserProgress.next_review_at <= now,
             )
+            .order_by(UserProgress.next_review_at.asc())
+            .limit(rev_lim)
         )
+        r2 = await db.execute(stmt2)
+        result_rows.extend(r2.scalars().all())
 
-    return out
+    # ── Priority 3: new cards (daily limit) ───────────────────────────────────
+    if len(result_rows) < limit and new_remaining > 0:
+        new_lim = min(limit - len(result_rows), new_remaining)
+        stmt3 = (
+            select(UserProgress)
+            .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
+            .join(Question,  Question.id  == Flashcard.question_id)
+            .options(*opts)
+            .where(
+                *base, *s_filt,
+                UserProgress.card_state == "new",
+            )
+            .order_by(UserProgress.created_at.asc())
+            .limit(new_lim)
+        )
+        r3 = await db.execute(stmt3)
+        result_rows.extend(r3.scalars().all())
+
+    return [build_due_card_out(up) for up in result_rows[:limit]]
 
 
 @router.get("/{flashcard_id}", response_model=DueCardOut)
@@ -98,15 +141,9 @@ async def get_flashcard(
     stmt = (
         select(UserProgress)
         .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
-        .options(
-            selectinload(UserProgress.flashcard)
-            .selectinload(Flashcard.question)
-            .selectinload(Question.choices),
-            selectinload(UserProgress.flashcard)
-            .selectinload(Flashcard.choice),
-        )
+        .options(*up_load_opts())
         .where(
-            UserProgress.user_id == current_user.id,
+            UserProgress.user_id      == current_user.id,
             UserProgress.flashcard_id == flashcard_id,
         )
     )
@@ -114,25 +151,4 @@ async def get_flashcard(
     up = result.scalar_one_or_none()
     if not up:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Flashcard not found")
-
-    fc = up.flashcard
-    q  = fc.question
-
-    sm2_out = SM2StateOut(
-        ease_factor=float(up.ease_factor),
-        interval_days=float(up.interval_days),
-        repetitions=up.repetitions,
-        next_review_at=up.next_review_at,
-        last_reviewed_at=up.last_reviewed_at,
-        last_rating=up.last_rating,
-    )
-
-    return DueCardOut(
-        flashcard_id=fc.id,
-        type=fc.type,
-        question=QuestionOut.model_validate(q),
-        choice=ChoiceOut.model_validate(fc.choice) if fc.choice else None,
-        sm2=sm2_out,
-        personal_note=up.personal_note,
-        is_starred=up.is_starred,
-    )
+    return build_due_card_out(up)

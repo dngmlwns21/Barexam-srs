@@ -1,9 +1,10 @@
 """Pure SM-2 algorithm — no I/O, no DB dependencies."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -68,6 +69,44 @@ def compute_next_sm2(
         interval_days=max(new_iv, hard_minutes / 1440.0),
         repetitions=new_rp,
     )
+
+
+def parse_steps(steps_str: str) -> List[float]:
+    """
+    Parse a steps string into a list of fractional-day intervals.
+    '1 10'       → [1/1440, 10/1440]   (default: bare numbers = minutes)
+    '1m 10m'     → [1/1440, 10/1440]
+    '1h 8h'      → [1/24,   8/24]
+    '1d 3d'      → [1.0,    3.0]
+    """
+    result: List[float] = []
+    for token in (steps_str or "1 10").strip().split():
+        t = token.strip().lower()
+        try:
+            if t.endswith("d"):
+                result.append(float(t[:-1]))
+            elif t.endswith("h"):
+                result.append(float(t[:-1]) / 24)
+            elif t.endswith("m"):
+                result.append(float(t[:-1]) / 1440)
+            else:
+                result.append(float(t) / 1440)   # bare number → minutes
+        except ValueError:
+            pass
+    return result or [1 / 1440, 10 / 1440]
+
+
+def apply_retention_modifier(interval_days: float, target_retention: float) -> float:
+    """
+    Scale interval so that recall probability equals target_retention.
+    Formula: modifier = log(target) / log(0.9)
+      target=0.90 → modifier=1.0  (no change)
+      target=0.95 → modifier≈0.49 (shorter intervals, more frequent reviews)
+      target=0.80 → modifier≈2.12 (longer intervals, less frequent reviews)
+    """
+    tr = max(0.50, min(0.99, float(target_retention or 0.90)))
+    modifier = math.log(tr) / math.log(0.90)
+    return max(1.0, round(interval_days * modifier, 4))
 
 
 def calc_next_review_at(

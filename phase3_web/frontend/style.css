@@ -1417,3 +1417,420 @@ body.dark-mode .login-card { background: var(--card); }
   white-space: nowrap;
 }
 .btn-restudy:hover { background: var(--primary); color: #fff; }
+
+/* ── Quick scan entry (study list) ──────────────────────────────────────────── */
+.qs-section-header {
+  font-size: .82rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin: 20px 0 10px;
+}
+.qs-mode-cards {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.qs-mode-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 8px 12px;
+  cursor: pointer; font-family: inherit;
+  transition: all .15s;
+}
+.qs-mode-btn:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+.qs-mode-btn > :first-child { font-size: 1.4rem; }
+.qs-mode-btn span { font-size: .8rem; font-weight: 700; color: var(--text); }
+.qs-mode-btn small { font-size: .68rem; color: var(--text-muted); text-align: center; }
+
+/* ── FIX M-8: html-level dark mode (applied by inline <head> script) ────────── */
+html.dark-mode body {
+  --bg:            #0F172A;
+  --card:          #1E293B;
+  --text:          #F1F5F9;
+  --text-muted:    #94A3B8;
+  --border:        #334155;
+  --primary-light: #1E3A5F;
+  --success-light: #14532D;
+  --danger-light:  #450A0A;
+  --warning-light: #451A03;
+  --shadow:        0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
+  --shadow-md:     0 4px 6px rgba(0,0,0,.3), 0 2px 4px rgba(0,0,0,.2);
+  --shadow-lg:     0 10px 15px rgba(0,0,0,.3), 0 4px 6px rgba(0,0,0,.2);
+}
+
+/* ── FIX M-2: Personal note banner in study screen ──────────────────────────── */
+.study-note-banner {
+  background: #FFFBEB;
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: .82rem;
+  color: #92400E;
+  margin-bottom: 12px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+body.dark-mode .study-note-banner {
+  background: #451A03;
+  color: #FDE68A;
+}
+
+/* ── FIX L-5: Help button ────────────────────────────────────────────────────── */
+.btn-help {
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  width: 26px; height: 26px;
+  font-size: .8rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.btn-help:hover { border-color: var(--primary); color: var(--primary); }
+
+/* ── FIX L-5: Help modal ─────────────────────────────────────────────────────── */
+.help-modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.help-modal[hidden] { display: none !important; }
+.help-modal-box {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  width: min(340px, 90vw);
+  box-shadow: var(--shadow-lg);
+}
+.help-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 1rem;
+}
+.help-close-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 1rem; color: var(--text-muted);
+  padding: 2px 6px; border-radius: 4px;
+}
+.help-close-btn:hover { background: var(--border); }
+.help-table { width: 100%; border-collapse: collapse; }
+.help-table td { padding: 6px 8px; font-size: .88rem; color: var(--text); }
+.help-table tr:nth-child(even) td { background: var(--bg); }
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: .8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+/* ── FIX M-3: Undo toast ─────────────────────────────────────────────────────── */
+.undo-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%; transform: translateX(-50%);
+  background: #1E293B;
+  color: #F1F5F9;
+  padding: 10px 18px;
+  border-radius: 24px;
+  font-size: .85rem;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  z-index: 500;
+  animation: fadeSlideUp .2s ease;
+  white-space: nowrap;
+}
+.undo-toast-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 4px 12px;
+  font-size: .8rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.undo-toast-btn:hover { background: var(--primary-dark); }
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── FIX M-10: Load more button ──────────────────────────────────────────────── */
+.btn-load-more {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: none;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.btn-load-more:hover { border-color: var(--primary); color: var(--primary); }
+.btn-load-more:disabled { opacity: .5; cursor: default; }
+
+/* ── FIX M-6: Quick Scan screen ──────────────────────────────────────────────── */
+.quick-scan {
+  max-width: 680px; margin: 0 auto;
+  padding: 16px 20px 80px; width: 100%;
+  min-height: 100vh;
+}
+.quick-scan-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; gap: 8px;
+}
+.quick-scan-mode-badge {
+  font-size: .78rem; font-weight: 700;
+  background: var(--primary-light); color: var(--primary);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+.quick-scan-counter {
+  font-size: .82rem; color: var(--text-muted); white-space: nowrap;
+}
+.qs-progress-bar {
+  height: 4px; background: var(--border); border-radius: 999px;
+  margin-bottom: 20px; overflow: hidden;
+}
+.qs-progress-fill {
+  height: 100%; background: var(--primary);
+  border-radius: 999px; transition: width .3s ease;
+}
+.quick-scan-card {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 20px;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  user-select: none;
+  min-height: 200px;
+  display: flex; flex-direction: column; gap: 16px;
+  transition: box-shadow .15s, border-color .15s;
+}
+.quick-scan-card:hover { border-color: var(--primary); }
+.quick-scan-card.revealed { border-color: var(--success); }
+.qs-flip-hint {
+  margin-top: auto;
+  font-size: .78rem; color: var(--text-muted);
+  text-align: center;
+}
+.qs-answer-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  align-self: flex-start;
+}
+.qs-correct { background: var(--success-light); color: var(--success); }
+.qs-wrong   { background: var(--danger-light);  color: var(--danger);  }
+.qs-explanation {
+  font-size: .84rem; color: var(--text);
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.quick-scan-empty, .quick-scan-done {
+  text-align: center; padding: 60px 20px;
+  color: var(--text-muted); font-size: .95rem;
+}
+.quick-scan-done h2 { font-size: 1.3rem; color: var(--text); margin: 12px 0 8px; }
+
+/* ── Print CSS (L-6) ──────────────────────────────────────────────────────────── */
+@media print {
+  .bottom-nav, .rating-bar, .btn-back, .btn-star, .btn-help,
+  .note-section, .btn-logout, .home-topbar-actions { display: none !important; }
+  body { background: #fff; color: #000; }
+  .question-card { box-shadow: none; border: 1px solid #ccc; }
+  .explanation { page-break-inside: avoid; }
+}
+
+/* ── Phase 4: Anki Deck Table ────────────────────────────────────────────────── */
+.deck-table {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.deck-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.deck-header-name {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  flex: 1;
+}
+.deck-header-counts {
+  display: flex;
+  gap: 0;
+}
+.deck-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 18px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s;
+  gap: 8px;
+}
+.deck-row:last-child { border-bottom: none; }
+.deck-row:hover { background: var(--bg); }
+.deck-row.deck-row-overall {
+  background: var(--primary-light);
+  font-weight: 700;
+}
+.deck-row.deck-row-overall:hover { background: #DBEAFE; }
+body.dark-mode .deck-row.deck-row-overall { background: #1E3A5F; }
+body.dark-mode .deck-row.deck-row-overall:hover { background: #1a3558; }
+.deck-name {
+  font-size: .93rem;
+  color: var(--text);
+  flex: 1;
+  text-align: left;
+}
+.deck-row-overall .deck-name { color: var(--primary); }
+.deck-counts {
+  display: flex;
+  gap: 0;
+  flex-shrink: 0;
+}
+.deck-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  font-size: .85rem;
+  font-weight: 700;
+  text-align: center;
+}
+.deck-new   { color: #2563EB; }   /* blue  — new cards */
+.deck-learn { color: #DC2626; }   /* red   — learning/lapsed */
+.deck-rev   { color: #16A34A; }   /* green — review */
+
+/* Legend */
+.deck-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: .74rem;
+  color: var(--text-muted);
+  padding: 2px 4px 10px;
+  flex-wrap: wrap;
+}
+.legend-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 3px;
+}
+.legend-new   { background: #2563EB; }
+.legend-learn { background: #DC2626; }
+.legend-rev   { background: #16A34A; }
+.legend-acc   { margin-left: auto; font-weight: 600; color: var(--text-muted); }
+
+/* ── Phase 4: SRS Settings Panel ─────────────────────────────────────────────── */
+.srs-settings-title {
+  font-size: .8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 14px 18px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.srs-row {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.srs-row:last-of-type { border-bottom: none; }
+.srs-label {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.srs-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.srs-slider {
+  flex: 1;
+  accent-color: var(--primary);
+  cursor: pointer;
+  height: 4px;
+}
+.srs-slider-val {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--primary);
+  min-width: 36px;
+  text-align: right;
+}
+.srs-text-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .88rem;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+  transition: border-color .15s;
+}
+.srs-text-input:focus { border-color: var(--primary); background: var(--card); }
+.srs-save-btn {
+  display: block;
+  margin: 12px 18px 0;
+  padding: 9px 28px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+.srs-save-btn:hover    { background: var(--primary-dark); }
+.srs-save-btn:disabled { background: #94A3B8; cursor: default; }
+.srs-save-msg {
+  padding: 6px 18px 12px;
+  font-size: .82rem;
+  font-weight: 600;
+  min-height: 1.5em;
+}
+body.dark-mode .srs-text-input { background: var(--card); color: var(--text); }
+body.dark-mode .srs-text-input:focus { background: #253554; }

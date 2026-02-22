@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse
 
 from .config import settings
 from .database import Base, engine
-from .routers import auth, flashcards, questions, reviews, stats, subjects, tags, users
+from .routers import auth, cards, dashboard, flashcards, questions, reviews, stats, subjects, tags, users
 
 FRONTEND_DIR = Path(__file__).parent.parent / "phase3_web" / "frontend"
 
@@ -69,6 +69,8 @@ app.include_router(flashcards.router,  prefix="/api/v1/flashcards", tags=["Flash
 app.include_router(reviews.router,     prefix="/api/v1/reviews",    tags=["Reviews"])
 app.include_router(stats.router,       prefix="/api/v1/stats",      tags=["Stats"])
 app.include_router(tags.router,        prefix="/api/v1/tags",       tags=["Tags"])
+app.include_router(dashboard.router,   prefix="/api/v1/dashboard",  tags=["Dashboard"])
+app.include_router(cards.router,       prefix="/api/v1/cards",      tags=["Cards"])
 
 
 @app.get("/health", tags=["Health"])

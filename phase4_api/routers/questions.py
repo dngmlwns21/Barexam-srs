@@ -47,11 +47,13 @@ async def list_questions(
     source_year: Optional[int]       = Query(None),
     tags:        Optional[List[str]] = Query(None),
     is_outdated: Optional[bool]      = Query(None),
+    q:           Optional[str]       = Query(None, description="Keyword search across stem and explanation"),
     page:        int                 = Query(1, ge=1),
     limit:       int                 = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    from sqlalchemy import or_
     stmt = select(Question)
 
     if subject_id:
@@ -66,6 +68,14 @@ async def list_questions(
         stmt = stmt.where(Question.tags.overlap(tags))
     if is_outdated is not None:
         stmt = stmt.where(Question.is_outdated == is_outdated)
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Question.stem.ilike(pattern),
+                Question.explanation.ilike(pattern),
+            )
+        )
 
     # Count total
     from sqlalchemy import func

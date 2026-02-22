@@ -65,6 +65,14 @@ DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 NS = uuid.UUID("12345678-1234-5678-1234-567812345678")  # namespace for uuid5
 
+# FIX C-4: Map 변호사시험 session number → exam year
+# 제N회 변호사시험 was held in year EXAM_SESSION_YEAR[N].
+EXAM_SESSION_YEAR: dict[int, int] = {
+    1: 2012, 2: 2013, 3: 2014, 4: 2015,  5: 2016,
+    6: 2017, 7: 2018, 8: 2019, 9: 2020, 10: 2021,
+    11: 2022, 12: 2023, 13: 2024,
+}
+
 # Sub-statement letter → choice_number offset (101, 102, …)
 _GA_IDX  = {l: 101 + i for i, l in enumerate("가나다라마바사아자차카타파하")}
 _BOX_IDX = {l: 101 + i for i, l in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")}
@@ -164,7 +172,8 @@ async def _seed(conn: asyncpg.Connection, questions: list, wipe: bool = False) -
 
         choices_raw    = parse_choices(q.get("choices") or {})
         correct_choice = int(q.get("answer") or 1)
-        source_year    = q.get("year")
+        # FIX C-4: derive year from session number when JSON year field is null
+        source_year    = q.get("year") or EXAM_SESSION_YEAR.get(q.get("exam_session"))
         source_name    = str(q["exam_session"]) if q.get("exam_session") is not None else None
         explanation    = q.get("explanation")
         tags           = q.get("tags") or []
@@ -179,14 +188,15 @@ async def _seed(conn: asyncpg.Connection, questions: list, wipe: bool = False) -
         )
 
         if existing:
-            # Update enriched fields only
+            # Update enriched fields + backfill source_year if it was null
             await conn.execute(
                 """
                 UPDATE questions
-                SET explanation = $2,
-                    tags = $3,
-                    is_outdated = $4,
-                    needs_revision = $5
+                SET explanation    = $2,
+                    tags           = $3,
+                    is_outdated    = $4,
+                    needs_revision = $5,
+                    source_year    = COALESCE(source_year, $6)
                 WHERE id = $1
                 """,
                 q_id_str,
@@ -194,6 +204,7 @@ async def _seed(conn: asyncpg.Connection, questions: list, wipe: bool = False) -
                 tags,
                 is_outdated,
                 needs_revision,
+                source_year,
             )
             updated_q += 1
         else:

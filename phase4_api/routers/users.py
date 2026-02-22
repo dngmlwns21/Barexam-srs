@@ -6,16 +6,20 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..dependencies import get_current_user, get_db
-from ..models import Flashcard, StudySession, User, UserProgress
+from ..models import Flashcard, Question, StudySession, User, UserProgress
 from ..schemas import (
+    DueCardOut,
     HeatmapEntry,
     StreakOut,
+    StudySettingsIn,
     UserOut,
     UserUpdateIn,
     VacationIn,
 )
+from ..utils import build_due_card_out, up_load_opts
 
 router = APIRouter()
 
@@ -80,6 +84,22 @@ async def set_vacation(
         current_user.vacation_mode_enabled = False
         current_user.vacation_started_at = None
 
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+@router.put("/me/study-settings", response_model=UserOut)
+async def update_study_settings(
+    body: StudySettingsIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if body.daily_new_limit    is not None: current_user.daily_new_limit    = body.daily_new_limit
+    if body.daily_review_limit is not None: current_user.daily_review_limit = body.daily_review_limit
+    if body.target_retention   is not None: current_user.target_retention   = body.target_retention
+    if body.learning_steps     is not None: current_user.learning_steps     = body.learning_steps.strip()
+    if body.relearning_steps   is not None: current_user.relearning_steps   = body.relearning_steps.strip()
     await db.commit()
     await db.refresh(current_user)
     return current_user
@@ -159,3 +179,46 @@ async def get_heatmap(
         )
         for s in sessions
     ]
+
+
+@router.get("/me/favorites", response_model=List[DueCardOut])
+async def get_favorites(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all flashcards the user has starred."""
+    stmt = (
+        select(UserProgress)
+        .options(*up_load_opts())
+        .where(
+            UserProgress.user_id == current_user.id,
+            UserProgress.is_starred == True,
+        )
+        .order_by(UserProgress.updated_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return [build_due_card_out(up) for up in result.scalars().all()]
+
+
+@router.get("/me/notes", response_model=List[DueCardOut])
+async def get_notes(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all flashcards where the user has written a personal note."""
+    stmt = (
+        select(UserProgress)
+        .options(*up_load_opts())
+        .where(
+            UserProgress.user_id == current_user.id,
+            UserProgress.personal_note.isnot(None),
+            UserProgress.personal_note != "",
+        )
+        .order_by(UserProgress.updated_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return [build_due_card_out(up) for up in result.scalars().all()]

@@ -49,10 +49,24 @@ class UserOut(BaseModel):
     sm2_good_interval_days:    int
     sm2_easy_interval_days:    int
 
+    daily_new_limit:    int
+    daily_review_limit: int
+    target_retention:   float
+    learning_steps:     str
+    relearning_steps:   str
+
     last_synced_at: Optional[datetime]
     created_at:     datetime
 
     model_config = {"from_attributes": True}
+
+
+class StudySettingsIn(BaseModel):
+    daily_new_limit:    Optional[int]   = Field(None, ge=0, le=500)
+    daily_review_limit: Optional[int]   = Field(None, ge=0, le=9999)
+    target_retention:   Optional[float] = Field(None, ge=0.50, le=0.99)
+    learning_steps:     Optional[str]   = None
+    relearning_steps:   Optional[str]   = None
 
 
 class UserUpdateIn(BaseModel):
@@ -103,6 +117,15 @@ class TagOut(BaseModel):
 
 # ── Choice ────────────────────────────────────────────────────────────────────
 
+class ChoicePublicOut(BaseModel):
+    """Choice data sent to client before answer reveal — is_correct is omitted."""
+    id:            uuid.UUID
+    choice_number: int
+    content:       str
+
+    model_config = {"from_attributes": True}
+
+
 class ChoiceOut(BaseModel):
     id:            uuid.UUID
     choice_number: int
@@ -113,6 +136,27 @@ class ChoiceOut(BaseModel):
 
 
 # ── Question ──────────────────────────────────────────────────────────────────
+
+class QuestionCardOut(BaseModel):
+    """Question shape used inside DueCardOut — MCQ choices have is_correct stripped."""
+    id:              uuid.UUID
+    subject_id:      uuid.UUID
+    exam_type:       str
+    source_year:     Optional[int]
+    source_name:     Optional[str]
+    question_number: Optional[int]
+    stem:            str
+    correct_choice:  int        # kept for immediate client-side reveal
+    explanation:     Optional[str]
+    tags:            List[str]
+    is_outdated:     bool
+    needs_revision:  bool
+    outdated_reason: Optional[str]
+    choices:         List[ChoicePublicOut] = []   # is_correct stripped
+    created_at:      datetime
+
+    model_config = {"from_attributes": True}
+
 
 class QuestionOut(BaseModel):
     id:              uuid.UUID
@@ -188,9 +232,9 @@ class SM2StateOut(BaseModel):
 
 class DueCardOut(BaseModel):
     flashcard_id:  uuid.UUID
-    type:          str              # "question" | "choice_ox"
-    question:      QuestionOut
-    choice:        Optional[ChoiceOut]   # populated for choice_ox
+    type:          str                   # "question" | "choice_ox"
+    question:      QuestionCardOut       # MCQ choices have is_correct stripped
+    choice:        Optional[ChoiceOut]   # kept for OX reveal (needs is_correct)
     sm2:           SM2StateOut
     personal_note: Optional[str]
     is_starred:    bool
@@ -208,7 +252,7 @@ class ReviewOut(BaseModel):
     flashcard_id:   uuid.UUID
     was_correct:    bool
     new_sm2:        SM2StateOut
-    peer_stats:     QuestionStatsOut
+    peer_stats:     Optional[QuestionStatsOut] = None
 
 
 class ReviewLogOut(BaseModel):
@@ -241,6 +285,21 @@ class SubjectStatsOut(BaseModel):
     due:          int
     reviewed_today: int
     accuracy_all: float
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+class DailyStatusOut(BaseModel):
+    done: List[DueCardOut]   # reviewed today
+    todo: List[DueCardOut]   # due but not yet reviewed today
+
+
+class DeckStatsOut(BaseModel):
+    subject_id:     Optional[uuid.UUID]
+    subject_name:   str
+    new_count:      int   # blue  — new cards available today
+    learning_count: int   # red   — learning/lapsed due now
+    review_count:   int   # green — review cards due today
 
 
 # ── Pagination ────────────────────────────────────────────────────────────────

@@ -50,6 +50,12 @@ class User(Base):
     sm2_good_interval_days:    Mapped[int] = mapped_column(Integer, default=1,  nullable=False)
     sm2_easy_interval_days:    Mapped[int] = mapped_column(Integer, default=3,  nullable=False)
 
+    daily_new_limit:    Mapped[int]   = mapped_column(Integer,      default=20,    nullable=False)
+    daily_review_limit: Mapped[int]   = mapped_column(Integer,      default=200,   nullable=False)
+    target_retention:   Mapped[float] = mapped_column(Numeric(4, 3), default=0.900, nullable=False)
+    learning_steps:     Mapped[str]   = mapped_column(String(50),   default='1 10', nullable=False)
+    relearning_steps:   Mapped[str]   = mapped_column(String(50),   default='10',   nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -218,6 +224,12 @@ class UserProgress(Base):
     personal_note: Mapped[Optional[str]] = mapped_column(Text)
     is_starred:    Mapped[bool]          = mapped_column(Boolean, default=False, nullable=False)
 
+    card_state:         Mapped[str]              = mapped_column(String(20), default='new', nullable=False)
+    learning_step:      Mapped[int]              = mapped_column(SmallInteger, default=0, nullable=False)
+    learning_due_at:    Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    lapses:             Mapped[int]              = mapped_column(Integer, default=0, nullable=False)
+    date_first_studied: Mapped[Optional[date]]   = mapped_column(Date)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -252,6 +264,7 @@ class ReviewLog(Base):
     prev_ease_factor:   Mapped[Optional[float]]    = mapped_column(Numeric(4, 2))
     prev_interval_days: Mapped[Optional[float]]    = mapped_column(Numeric(10, 4))
     prev_repetitions:   Mapped[Optional[int]]      = mapped_column(Integer)
+    prev_card_state:    Mapped[Optional[str]]      = mapped_column(String(20))
 
     new_ease_factor:    Mapped[Optional[float]]    = mapped_column(Numeric(4, 2))
     new_interval_days:  Mapped[Optional[float]]    = mapped_column(Numeric(10, 4))
