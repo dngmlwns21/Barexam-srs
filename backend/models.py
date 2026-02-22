@@ -19,7 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -125,6 +125,8 @@ class Question(Base):
     total_attempts:   Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     correct_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -165,9 +167,11 @@ class Choice(Base):
     content:       Mapped[str]  = mapped_column(Text, nullable=False)
     is_correct:    Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    legal_basis: Mapped[Optional[str]] = mapped_column(String)
+    case_citation: Mapped[Optional[str]] = mapped_column(String)
+    explanation_core: Mapped[Optional[str]] = mapped_column(Text)
+
     __table_args__ = (
-        UniqueConstraint("question_id", "choice_number"),
-    )
 
     question:   Mapped["Question"]         = relationship(back_populates="choices")
     flashcards: Mapped[List["Flashcard"]]  = relationship(back_populates="choice")
