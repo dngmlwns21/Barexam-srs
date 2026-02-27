@@ -1,23 +1,18 @@
 #!/bin/bash
-# Phase 4: Data Execution Script (Bash)
-echo "Starting Auto-Deployment Sequence..."
+# run_and_deploy.sh — Auto-deploy: RAG pipeline + git push to Render.com
+# Usage: bash run_and_deploy.sh
+set -euo pipefail
 
-# 1. Run Data Pipeline
-echo "Running Data Pipeline (Full Mock Exam)..."
-python -m data_pipeline.pipeline mock
-if [ $? -ne 0 ]; then
-    echo "Pipeline failed"
-    exit 1
-fi
+echo "=== [1/4] Running data pipeline (mock idx 87) ==="
+python -m data_pipeline.pipeline mock --idx-min 87 --idx-max 87
 
-# 2. Git Operations
-echo "Staging files..."
+echo "=== [2/4] Staging all changes ==="
 git add .
 
-echo "Committing..."
-git commit -m "chore: Process all mock data and deploy"
+echo "=== [3/4] Committing ==="
+git commit -m "Auto-deploy: UI/UX overhaul, RAG pipeline integration, and new card generation"
 
-echo "Pushing to origin..."
-git push origin main
+echo "=== [4/4] Pushing to origin main ==="
+git push https://${GITHUB_TOKEN}@github.com/dngmlwns21/Barexam-srs.git main
 
-echo "Deployment Triggered Successfully!"
+echo "=== Deploy complete! Render.com will auto-deploy from main branch ==="

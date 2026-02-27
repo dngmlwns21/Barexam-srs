@@ -22,6 +22,21 @@ class ImportanceGrade(str, Enum):
 
 OX_LETTERS = ["가", "나", "다", "라", "마"]
 
+# Alias → canonical subject name (used by crawler and pdf_extractor)
+SUBJECT_ALIASES: Dict[str, str] = {
+    "헌법":      "헌법",
+    "민법":      "민법",
+    "민사소송법": "민사소송법",
+    "민소":      "민사소송법",
+    "형법":      "형법",
+    "형사소송법": "형사소송법",
+    "형소":      "형사소송법",
+    "상법":      "상법",
+    "행정법":    "행정법",
+    "국제법":    "국제법",
+    "공법":      "헌법",
+}
+
 
 # ── Raw question (pre-LLM) ────────────────────────────────────────────────────
 

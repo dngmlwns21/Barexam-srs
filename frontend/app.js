@@ -912,18 +912,24 @@ function renderResult() {
     </div>
   `;
 
-  // Rich metadata from mock OX card
+  // Rich metadata — Union Textbook Style: blue box for statute, purple box for precedent
   const oxRaw = card._ox;
-  const richMeta = (isOX && oxRaw) ? (() => {
-    const imp = { A: '🔴 A 핵심', B: '🟡 B 표준', C: '⚪ C 주변' }[oxRaw.importance] || oxRaw.importance;
-    const items = [];
-    if (oxRaw.importance) items.push(`<span class="ox-meta-badge ox-importance-${oxRaw.importance}">${imp}</span>`);
-    if (oxRaw.legal_basis) items.push(`<span class="ox-meta-badge ox-provision">📖 ${esc(oxRaw.legal_basis)}</span>`); // Changed from legal_provision
-    if (oxRaw.case_citation) items.push(`<span class="ox-meta-badge ox-precedent">⚖️ ${esc(oxRaw.case_citation)}</span>`); // Changed from precedent
-    if (oxRaw.theory)          items.push(`<span class="ox-meta-badge ox-theory">💡 ${esc(oxRaw.theory)}</span>`);
-    if (oxRaw.is_revised && oxRaw.revision_note) items.push(`<div class="ox-revision-note">⚠️ 개정: ${esc(oxRaw.revision_note)}</div>`);
-    return items.length ? `<div class="ox-meta-row">${items.join('')}</div>` : '';
-  })() : '';
+  const richMeta = (() => {
+    const importance   = (oxRaw && oxRaw.importance)    || null;
+    const legalBasis   = (oxRaw && oxRaw.legal_basis)   || (isOX && card.choice && card.choice.legal_basis)   || null;
+    const caseCitation = (oxRaw && oxRaw.case_citation) || (isOX && card.choice && card.choice.case_citation) || null;
+    const theory       = oxRaw ? oxRaw.theory       : null;
+    const isRevised    = oxRaw ? oxRaw.is_revised   : false;
+    const revisionNote = oxRaw ? oxRaw.revision_note : null;
+    const impMap = { A: '🔴 핵심 (A)', B: '🟡 표준 (B)', C: '⚪ 주변 (C)' };
+    let html = '';
+    if (importance)   html += `<div class="importance-badge importance-${importance}">${impMap[importance] || importance}</div>`;
+    if (legalBasis)   html += `<div class="legal-basis-box"><span class="legal-box-label">📖 법령 근거</span><div class="legal-box-text">${fmt(legalBasis)}</div></div>`;
+    if (caseCitation) html += `<div class="case-citation-box"><span class="legal-box-label">⚖️ 판례</span><div class="legal-box-text">${fmt(caseCitation)}</div></div>`;
+    if (theory)       html += `<div class="theory-row">💡 ${esc(theory)}</div>`;
+    if (isRevised && revisionNote) html += `<div class="ox-revision-note">⚠️ 개정: ${esc(revisionNote)}</div>`;
+    return html ? `<div class="legal-meta-section">${html}</div>` : '';
+  })();
 
   // Keywords (for OX cards)
   const keywordsHtml = (isOX && card.choice.keywords && card.choice.keywords.length > 0) ? `
@@ -1009,6 +1015,7 @@ function renderResult() {
         <div class="rating-btns">${ratingBtns}</div>
       </div>
     </div>
+    <button class="ai-fab" id="ai-fab-btn" title="AI 튜터에게 질문하기">🤖</button>
   `;
 
   document.getElementById('btn-back').addEventListener('click',
@@ -1018,6 +1025,108 @@ function renderResult() {
   document.querySelectorAll('.btn-rating').forEach(btn => {
     btn.addEventListener('click', () => submitRating(parseInt(btn.dataset.rating)));
   });
+  document.getElementById('ai-fab-btn')?.addEventListener('click', () => openAITutor(card));
+}
+
+// ── AI Tutor ──────────────────────────────────────────────────────────────────
+let _aiChatHistory = [];
+
+function openAITutor(card) {
+  _aiChatHistory = [];
+  document.getElementById('ai-tutor-overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'ai-tutor-overlay';
+  overlay.className = 'ai-tutor-modal';
+
+  const stem = card.question.stem || '';
+  const stmt = card.choice ? card.choice.content : '';
+  const context = `문제: ${stem}\n선택지: ${stmt}`;
+
+  overlay.innerHTML = `
+    <div class="ai-tutor-panel">
+      <div class="ai-tutor-header">
+        <span class="ai-tutor-title">🤖 AI 튜터 — 법률 질의응답</span>
+        <button class="ai-tutor-close" id="ai-tutor-close">✕</button>
+      </div>
+      <div class="ai-chat-history" id="ai-chat-history">
+        <div class="ai-msg assistant">
+          <div class="ai-msg-bubble">안녕하세요! 이 문제에 대해 궁금한 점을 질문해 주세요. 법령 근거나 판례도 설명해 드릴게요.</div>
+        </div>
+      </div>
+      <div class="ai-tutor-input-row">
+        <input type="text" class="ai-tutor-input" id="ai-tutor-input"
+          placeholder="예: 이 판례의 핵심 법리는 무엇인가요?" />
+        <button class="ai-tutor-send" id="ai-tutor-send">전송</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('app').appendChild(overlay);
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeAITutor(); });
+  document.getElementById('ai-tutor-close').addEventListener('click', closeAITutor);
+
+  const sendBtn = document.getElementById('ai-tutor-send');
+  const input   = document.getElementById('ai-tutor-input');
+  sendBtn.addEventListener('click', () => sendAITutorMessage(context, card));
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAITutorMessage(context, card); } });
+  input.focus();
+}
+
+function closeAITutor() {
+  document.getElementById('ai-tutor-overlay')?.remove();
+}
+
+async function sendAITutorMessage(context, card) {
+  const input   = document.getElementById('ai-tutor-input');
+  const sendBtn = document.getElementById('ai-tutor-send');
+  const history = document.getElementById('ai-chat-history');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  input.value = '';
+  sendBtn.disabled = true;
+
+  const userBubble = document.createElement('div');
+  userBubble.className = 'ai-msg user';
+  userBubble.innerHTML = `<div class="ai-msg-bubble">${esc(msg)}</div>`;
+  history.appendChild(userBubble);
+  history.scrollTop = history.scrollHeight;
+
+  const thinkBubble = document.createElement('div');
+  thinkBubble.className = 'ai-msg assistant';
+  thinkBubble.id = 'ai-thinking';
+  thinkBubble.innerHTML = `<div class="ai-msg-bubble" style="opacity:.6">⏳ 분석 중…</div>`;
+  history.appendChild(thinkBubble);
+  history.scrollTop = history.scrollHeight;
+
+  _aiChatHistory.push({ role: 'user', content: msg });
+
+  try {
+    const resp = await api.post('/chat/explain', {
+      card_id: card.flashcard_id || '',
+      message: msg,
+      context,
+      history: _aiChatHistory.slice(-6),
+    });
+    const reply = resp.response || '응답을 받지 못했습니다.';
+    _aiChatHistory.push({ role: 'assistant', content: reply });
+    document.getElementById('ai-thinking')?.remove();
+    const aiBubble = document.createElement('div');
+    aiBubble.className = 'ai-msg assistant';
+    aiBubble.innerHTML = `<div class="ai-msg-bubble">${fmt(reply)}</div>`;
+    history.appendChild(aiBubble);
+    history.scrollTop = history.scrollHeight;
+  } catch (err) {
+    document.getElementById('ai-thinking')?.remove();
+    const errBubble = document.createElement('div');
+    errBubble.className = 'ai-msg assistant';
+    errBubble.innerHTML = `<div class="ai-msg-bubble" style="color:var(--danger)">오류: ${esc(err.message)}</div>`;
+    history.appendChild(errBubble);
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
 }
 
 // ── Star toggle ───────────────────────────────────────────────────────────────
