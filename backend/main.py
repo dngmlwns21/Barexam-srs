@@ -20,6 +20,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, engine
@@ -73,5 +75,13 @@ app.include_router(chat.router,        prefix="/api/v1/chat",       tags=["Chat"
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "ok", "version": "4.0.0"}
+
+
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    return FileResponse("frontend/index.html")
+
+
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
