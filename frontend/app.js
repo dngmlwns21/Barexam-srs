@@ -120,7 +120,16 @@ const S = {
   isMockMode:     false,
   mockQueue:      [],   // OXCardOut[] (shuffled)
   mockIdx:        0,
-  mockTest:       null, // { cards, index, answers }
+  mockTest:       null, // { cards, index, answers, startTime, timeLimit }
+  // search
+  searchQuery:    '',
+  searchResults:  [],
+  searchSubjectId: null,
+  // history filter
+  wrongOnlyFilter: false,
+  historySubjectId: null,
+  // weekly stats
+  weeklyStats:    null,
 };
 
 // ── Escape / format helpers ───────────────────────────────────────────────────
@@ -465,14 +474,15 @@ function renderHome() {
       ${quickScanSection}
       ${deckSection}
 
-      <div class="mock-test-section" style="padding: 16px; border-top: 1px solid #e0e0e0;">
-        <button class="btn-cta" onclick="startMockTest()">📝 모의고사 시작 (20문제)</button>
+      <div class="mock-test-section">
+        <button class="btn-mock-setup" id="btn-mock-setup">📝 셀프 모의고사</button>
       </div>
     </div>
   `;
 
   document.getElementById('btn-logout').addEventListener('click', logout);
   document.getElementById('btn-dark-toggle-home').addEventListener('click', toggleDarkMode);
+  document.getElementById('btn-mock-setup').addEventListener('click', showMockSetup);
   document.getElementById('btn-cta')?.addEventListener('click', () => startMockStudy(null));
   document.querySelectorAll('.deck-row').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1327,17 +1337,21 @@ async function showMyPage(tab) {
   let data = {};
   try {
     if (S.myPageTab === 'stats') {
-      const [stats, subjStats] = await Promise.all([
+      const [stats, subjStats, weekly] = await Promise.all([
         api.get('/stats/'),
         api.get('/stats/subjects'),
+        api.get('/stats/weekly').catch(() => null),
       ]);
       S.stats        = stats;
       S.subjectStats = subjStats;
       S.streak       = stats.study_streak;
-      data = { stats, subjStats };
+      S.weeklyStats  = weekly;
+      data = { stats, subjStats, weekly };
     } else if (S.myPageTab === 'history') {
       // FIX M-10: reset offset when switching to history tab
       S.historyOffset = 0;
+      S.wrongOnlyFilter = false;
+      S.historySubjectId = null;
       const PAGE = 30;
       const logs = await api.get(`/reviews/history?limit=${PAGE + 1}&offset=0`);
       S.historyHasMore = logs.length > PAGE;
@@ -1372,11 +1386,40 @@ function renderMyPage(data) {
   let contentHtml = '';
 
   if (tab === 'stats') {
-    const { stats } = data;
+    const { stats, weekly } = data;
     if (!stats) {
       contentHtml = '<div class="review-empty">통계를 불러올 수 없습니다.</div>';
     } else {
+      // Weekly chart
+      const days = (weekly && weekly.days) || [];
+      const maxReviewed = Math.max(...days.map(d => d.reviewed), 1);
+      const DOW = ['일','월','화','수','목','금','토'];
+      const weeklyChartHtml = days.length > 0 ? `
+        <div class="weekly-chart-card">
+          <div class="weekly-chart-title">📈 7일 학습 현황</div>
+          <div class="weekly-chart">
+            ${days.map(d => {
+              const date = new Date(d.date + 'T00:00:00');
+              const dow  = DOW[date.getDay()];
+              const pct  = Math.round((d.reviewed / maxReviewed) * 100);
+              const accPct = d.accuracy;
+              return `
+                <div class="weekly-bar-col">
+                  <div class="weekly-bar-wrap">
+                    <div class="weekly-bar-fill" style="height:${pct}%"
+                         title="${d.reviewed}개 학습, 정확도 ${accPct}%"></div>
+                  </div>
+                  <div class="weekly-bar-label">${dow}</div>
+                  <div class="weekly-bar-val">${d.reviewed > 0 ? d.reviewed : ''}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      ` : '';
+
       contentHtml = `
+        ${weeklyChartHtml}
         <div class="stat-big-card">
           <div class="stat-big-label">7일 정확도</div>
           <div class="stat-big-value">${stats.accuracy_7d.toFixed(1)}%</div>
@@ -1422,8 +1465,23 @@ function renderMyPage(data) {
       const d = Math.floor(hr / 24);
       return d < 7 ? `${d}일 전` : `${Math.floor(d / 7)}주 전`;
     }
+    const subjectOpts = (S.subjects || []).map(s =>
+      `<option value="${esc(s.id)}" ${S.historySubjectId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`
+    ).join('');
+    const filterBar = `
+      <div class="history-filter-bar">
+        <div class="history-filter-btns">
+          <button class="hf-btn ${!S.wrongOnlyFilter ? 'active' : ''}" id="hf-all">전체</button>
+          <button class="hf-btn ${S.wrongOnlyFilter ? 'active' : ''}" id="hf-wrong">❌ 오답만</button>
+        </div>
+        <select id="hf-subject" class="hf-subject-select">
+          <option value="">전체 과목</option>
+          ${subjectOpts}
+        </select>
+      </div>
+    `;
     const itemsHtml = logs.length === 0
-      ? '<div class="review-empty">아직 학습 기록이 없어요</div>'
+      ? '<div class="review-empty">해당하는 학습 기록이 없어요</div>'
       : logs.map(log => {
           const stem  = (log.question_stem || '').slice(0, 60) +
                         ((log.question_stem || '').length > 60 ? '…' : '');
@@ -1431,8 +1489,10 @@ function renderMyPage(data) {
             ? '<span class="review-badge review-badge-ox">O/X</span>'
             : '<span class="review-badge review-badge-mcq">MCQ</span>';
           const dots  = '●'.repeat(Math.min(log.rating, 5)) + '○'.repeat(5 - Math.min(log.rating, 5));
+          const subjectTag = log.subject_name
+            ? `<span class="review-subject-tag">${esc(log.subject_name)}</span>` : '';
           return `<div class="review-item" data-flashcard-id="${esc(log.flashcard_id)}">
-            ${badge}
+            <div class="review-item-top">${badge}${subjectTag}</div>
             <div class="review-stem">${esc(stem || '(문제 정보 없음)')}</div>
             <div class="review-meta">
               <span class="review-correct ${log.was_correct ? 'correct' : 'wrong'}">${log.was_correct ? '✓' : '✗'}</span>
@@ -1444,7 +1504,7 @@ function renderMyPage(data) {
     const loadMoreHtml = S.historyHasMore
       ? `<button class="btn-load-more" id="btn-load-more">더 보기</button>`
       : '';
-    contentHtml = `<div class="review-list" id="review-list-container">${itemsHtml}</div>${loadMoreHtml}`;
+    contentHtml = `${filterBar}<div class="review-list" id="review-list-container">${itemsHtml}</div>${loadMoreHtml}`;
   } else if (tab === 'bookmarks') {
     const questions = data.starred_questions || [];
     const itemsHtml = questions.length === 0
@@ -1553,6 +1613,20 @@ function renderMyPage(data) {
 
   document.querySelectorAll('.mypage-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => showMyPage(btn.dataset.tab));
+  });
+
+  // 오답노트 필터 버튼
+  document.getElementById('hf-all')?.addEventListener('click', async () => {
+    S.wrongOnlyFilter = false;
+    await _reloadHistory();
+  });
+  document.getElementById('hf-wrong')?.addEventListener('click', async () => {
+    S.wrongOnlyFilter = true;
+    await _reloadHistory();
+  });
+  document.getElementById('hf-subject')?.addEventListener('change', async e => {
+    S.historySubjectId = e.target.value || null;
+    await _reloadHistory();
   });
 
   // 오답노트 "다시 풀기" buttons
@@ -1806,29 +1880,11 @@ function renderQSCard() {
 
 // ── Mock Test ────────────────────────────────────────────────────────────────
 async function startMockTest() {
-  S.screen = 'mock-test';
-  hideBottomNav();
-  showLoading();
-
-  try {
-    const cards = await api.getMockTest(20);
-    if (!cards || cards.length === 0) {
-      showHome();
-      alert('모의고사를 생성할 카드가 충분하지 않습니다.');
-      return;
-    }
-    S.mockTest = {
-      cards: cards,
-      index: 0,
-      answers: new Array(cards.length).fill(null),
-    };
-    hideLoading();
-    renderMockTestQuestion();
-  } catch (err) {
-    console.error('Error starting mock test:', err);
-    hideLoading();
-    showHome();
-    alert('모의고사를 시작하는 중 오류가 발생했습니다.');
+  // Redirect to setup screen instead of starting directly
+  if (S.subjects && S.subjects.length > 0) {
+    showMockSetup();
+  } else {
+    await startMockWithConfig(null, 20, 0);
   }
 }
 
@@ -1840,11 +1896,14 @@ function renderMockTestQuestion() {
 
   const progress = `${index + 1} / ${cards.length}`;
 
+  const timerHtml = S.mockTest.timeLimit > 0
+    ? `<span id="mock-timer" class="mock-timer">⏱ --:--</span>` : '';
+
   let html = `
     <div class="study">
       <div class="study-header">
         <button class="btn-back" onclick="showHome()">← 홈</button>
-        <div class="study-meta">모의고사</div>
+        <div class="study-meta">모의고사 ${timerHtml}</div>
         <div class="session-count">${progress}</div>
       </div>
       <div class="question-card" style="padding-bottom: 120px;">
@@ -1938,6 +1997,282 @@ function showMockTestSummary() {
   setActiveTab('home');
 }
 
+// ── History reload helper ─────────────────────────────────────────────────────
+async function _reloadHistory() {
+  S.historyOffset = 0;
+  const PAGE = 30;
+  const params = new URLSearchParams({ limit: PAGE + 1, offset: 0 });
+  if (S.wrongOnlyFilter) params.set('wrong_only', 'true');
+  if (S.historySubjectId) params.set('subject_id', S.historySubjectId);
+  try {
+    showLoading();
+    const logs = await api.get(`/reviews/history?${params}`);
+    S.historyHasMore = logs.length > PAGE;
+    hideLoading();
+    const data = { logs: logs.slice(0, PAGE) };
+    S.historyOffset = PAGE;
+    // Re-render only the content area
+    renderMyPage(data);
+  } catch(e) {
+    console.error(e);
+    hideLoading();
+  }
+}
+
+
+// ── Search ────────────────────────────────────────────────────────────────────
+function showSearch() {
+  S.screen = 'search';
+  showBottomNav();
+  setActiveTab('search');
+  document.getElementById('login-screen').hidden = true;
+  renderSearch();
+}
+
+function renderSearch() {
+  const dynEl = document.getElementById('dynamic-screen');
+  const subjectOpts = (S.subjects || []).map(s =>
+    `<option value="${esc(s.id)}" ${S.searchSubjectId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`
+  ).join('');
+
+  dynEl.innerHTML = `
+    <div class="search-screen">
+      <div class="search-header">
+        <h2 class="search-title">🔍 문제 검색</h2>
+      </div>
+      <div class="search-bar-row">
+        <input type="text" id="search-input" class="search-input"
+          placeholder="키워드를 입력하세요 (예: 신뢰보호원칙, 소급입법)"
+          value="${esc(S.searchQuery)}" autocomplete="off" />
+        <button class="search-btn" id="search-btn">검색</button>
+      </div>
+      <div class="search-filter-row">
+        <select id="search-subject" class="search-subject-select">
+          <option value="">전체 과목</option>
+          ${subjectOpts}
+        </select>
+      </div>
+      <div id="search-results" class="search-results">
+        ${S.searchResults.length === 0 && S.searchQuery
+          ? '<div class="search-empty">검색 결과가 없습니다</div>'
+          : S.searchResults.length === 0
+          ? '<div class="search-hint">키워드를 입력하고 검색하세요</div>'
+          : S.searchResults.map(q => `
+            <div class="search-result-card" data-question-id="${esc(q.id)}">
+              <div class="search-result-subject">${esc(q.subject_name || '')}</div>
+              <div class="search-result-stem">${esc((q.stem || '').slice(0, 120))}${q.stem && q.stem.length > 120 ? '…' : ''}</div>
+              <div class="search-result-meta">
+                <span>${esc(q.source_name || '')}${q.source_year ? ` ${q.source_year}년` : ''}</span>
+                <span>${q.question_number ? `${q.question_number}번` : ''}</span>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+  `;
+
+  const input = document.getElementById('search-input');
+  const btn   = document.getElementById('search-btn');
+
+  btn.addEventListener('click', () => performSearch(input.value.trim()));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') performSearch(input.value.trim());
+  });
+  document.getElementById('search-subject').addEventListener('change', e => {
+    S.searchSubjectId = e.target.value || null;
+  });
+  document.querySelectorAll('.search-result-card').forEach(card => {
+    card.addEventListener('click', () => {
+      // Navigate to question flashcard study
+      const qid = card.dataset.questionId;
+      S.returnTo = 'search';
+      // Fetch the flashcard for this question and study it
+      startStudyFromQuestion(qid);
+    });
+  });
+}
+
+async function performSearch(query) {
+  if (!query && !S.searchSubjectId) return;
+  S.searchQuery = query;
+  showLoading();
+  try {
+    const params = new URLSearchParams({ limit: '30' });
+    if (query) params.set('q', query);
+    if (S.searchSubjectId) params.set('subject_id', S.searchSubjectId);
+    const data = await api.get(`/questions/?${params}`);
+    S.searchResults = (data.items || []).map(q => ({
+      ...q,
+      subject_name: (S.subjects.find(s => s.id === q.subject_id) || {}).name || '',
+    }));
+  } catch (e) {
+    console.error(e);
+    S.searchResults = [];
+  }
+  hideLoading();
+  renderSearch();
+}
+
+async function startStudyFromQuestion(questionId) {
+  showLoading();
+  try {
+    // Find the question-type flashcard for this question
+    const cards = await api.get(`/flashcards/due?limit=1&subject_id=`);
+    // Fallback: use the single-card restudy endpoint
+    const fc = await api.get(`/cards/quick-scan?mode=newest&limit=1`);
+    // Actually just use the question details to create a synthetic card
+    const q = await api.get(`/questions/${questionId}`);
+    hideLoading();
+    // Navigate to study list to find this subject
+    S.activeSubjectId = q.subject_id;
+    startStudy(q.subject_id);
+  } catch (e) {
+    console.error(e);
+    hideLoading();
+  }
+}
+
+
+// ── Mock Exam Setup ────────────────────────────────────────────────────────────
+function showMockSetup() {
+  S.screen = 'mock-setup';
+  hideBottomNav();
+  document.getElementById('login-screen').hidden = true;
+  renderMockSetup();
+}
+
+function renderMockSetup() {
+  const subjects = S.subjects || [];
+  const subjectOpts = subjects.map(s =>
+    `<option value="${esc(s.id)}">${esc(s.name)}</option>`
+  ).join('');
+
+  const dynEl = document.getElementById('dynamic-screen');
+  dynEl.innerHTML = `
+    <div class="mock-setup-screen">
+      <div class="mock-setup-header">
+        <button class="btn-back" id="mock-setup-back">← 홈</button>
+        <h2 class="mock-setup-title">📝 셀프 모의고사</h2>
+        <div></div>
+      </div>
+
+      <div class="mock-setup-card">
+        <div class="mock-setup-section">
+          <div class="mock-setup-label">📚 과목 선택</div>
+          <select id="mock-subject-select" class="mock-setup-select">
+            <option value="">전체 과목</option>
+            ${subjectOpts}
+          </select>
+        </div>
+
+        <div class="mock-setup-section">
+          <div class="mock-setup-label">📊 문항 수</div>
+          <div class="mock-count-btns">
+            <button class="mock-count-btn active" data-count="10">10문제</button>
+            <button class="mock-count-btn" data-count="20">20문제</button>
+            <button class="mock-count-btn" data-count="30">30문제</button>
+          </div>
+        </div>
+
+        <div class="mock-setup-section">
+          <div class="mock-setup-label">⏱️ 시간 제한</div>
+          <div class="mock-count-btns">
+            <button class="mock-time-btn active" data-minutes="0">제한 없음</button>
+            <button class="mock-time-btn" data-minutes="10">10분</button>
+            <button class="mock-time-btn" data-minutes="20">20분</button>
+            <button class="mock-time-btn" data-minutes="30">30분</button>
+          </div>
+        </div>
+
+        <button class="btn-start-mock" id="btn-start-mock">시험 시작</button>
+      </div>
+    </div>
+  `;
+
+  let selectedCount   = 10;
+  let selectedMinutes = 0;
+
+  document.getElementById('mock-setup-back').addEventListener('click', () => {
+    showBottomNav(); setActiveTab('home'); showHome();
+  });
+
+  document.querySelectorAll('.mock-count-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mock-count-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedCount = parseInt(btn.dataset.count);
+    });
+  });
+
+  document.querySelectorAll('.mock-time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mock-time-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedMinutes = parseInt(btn.dataset.minutes);
+    });
+  });
+
+  document.getElementById('btn-start-mock').addEventListener('click', () => {
+    const subjectId = document.getElementById('mock-subject-select').value || null;
+    startMockWithConfig(subjectId, selectedCount, selectedMinutes);
+  });
+}
+
+async function startMockWithConfig(subjectId, count, timeLimitMinutes) {
+  S.screen = 'mock-test';
+  hideBottomNav();
+  showLoading();
+  try {
+    const params = new URLSearchParams({ num_cards: count });
+    if (subjectId) params.set('subject_id', subjectId);
+    const cards = await api.get(`/mock/mock-test?${params}`);
+    if (!cards || cards.length === 0) {
+      showHome();
+      alert('모의고사를 생성할 카드가 충분하지 않습니다.');
+      return;
+    }
+    S.mockTest = {
+      cards,
+      index:      0,
+      answers:    new Array(cards.length).fill(null),
+      startTime:  Date.now(),
+      timeLimit:  timeLimitMinutes * 60 * 1000,  // ms
+      timerInterval: null,
+    };
+    hideLoading();
+    renderMockTestQuestion();
+    if (timeLimitMinutes > 0) _startMockTimer();
+  } catch (err) {
+    console.error(err);
+    hideLoading();
+    showHome();
+    alert('모의고사를 시작하는 중 오류가 발생했습니다.');
+  }
+}
+
+function _startMockTimer() {
+  if (S.mockTest.timerInterval) clearInterval(S.mockTest.timerInterval);
+  S.mockTest.timerInterval = setInterval(() => {
+    if (!S.mockTest) { clearInterval(S.mockTest?.timerInterval); return; }
+    const elapsed  = Date.now() - S.mockTest.startTime;
+    const remaining = S.mockTest.timeLimit - elapsed;
+    const el = document.getElementById('mock-timer');
+    if (el) {
+      if (remaining <= 0) {
+        clearInterval(S.mockTest.timerInterval);
+        el.textContent = '⏱ 00:00';
+        showMockTestSummary();
+      } else {
+        const min = Math.floor(remaining / 60000);
+        const sec = Math.floor((remaining % 60000) / 1000);
+        el.textContent = `⏱ ${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+        if (remaining < 60000) el.style.color = 'var(--danger)';
+      }
+    }
+  }, 1000);
+}
+
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init() {
   // FIX M-8: sync dark mode class on body (html class set by inline script in <head>)
@@ -1959,6 +2294,7 @@ function showMockTestSummary() {
   // Wire up bottom navigation
   document.getElementById('nav-home').addEventListener('click', showHome);
   document.getElementById('nav-study').addEventListener('click', showStudyList);
+  document.getElementById('nav-search').addEventListener('click', showSearch);
   document.getElementById('nav-mypage').addEventListener('click', () => showMyPage());
 
   // FIX L-5: wire help modal close button

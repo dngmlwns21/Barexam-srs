@@ -281,8 +281,20 @@ class ReviewLogOut(BaseModel):
     reviewed_at:  datetime
     question_stem: Optional[str] = None
     card_type:     Optional[str] = None
+    subject_name:  Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class WeeklyDayOut(BaseModel):
+    date:     str    # YYYY-MM-DD
+    reviewed: int
+    correct:  int
+    accuracy: float
+
+
+class WeeklyStatsOut(BaseModel):
+    days: List["WeeklyDayOut"]
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

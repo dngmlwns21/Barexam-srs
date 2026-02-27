@@ -159,6 +159,45 @@ async def subject_stats(
     return out
 
 
+@router.get("/weekly")
+async def weekly_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return per-day reviewed/correct/accuracy for the last 7 days."""
+    today    = date.today()
+    week_ago = today - timedelta(days=6)
+
+    res = await db.execute(
+        select(
+            func.date(ReviewLog.reviewed_at).label("day"),
+            func.count().label("total"),
+            func.count().filter(ReviewLog.was_correct == True).label("correct"),
+        )
+        .where(
+            ReviewLog.user_id == current_user.id,
+            func.date(ReviewLog.reviewed_at) >= week_ago,
+        )
+        .group_by(func.date(ReviewLog.reviewed_at))
+        .order_by(func.date(ReviewLog.reviewed_at))
+    )
+    row_map = {str(r.day): r for r in res.all()}
+
+    days = []
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        r   = row_map.get(day.isoformat())
+        total   = r.total   if r else 0
+        correct = r.correct if r else 0
+        days.append({
+            "date":     day.isoformat(),
+            "reviewed": total,
+            "correct":  correct,
+            "accuracy": round(correct / total * 100, 1) if total else 0.0,
+        })
+    return {"days": days}
+
+
 @router.get("/peer/{question_id}", response_model=QuestionStatsOut)
 async def peer_stats(
     question_id: uuid.UUID,

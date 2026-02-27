@@ -37,11 +37,11 @@ load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
 
 log = logging.getLogger(__name__)
 
-MODEL       = "gemini-1.5-pro"
+MODEL       = "gemini-2.0-flash"
 MAX_TOKENS  = 4096
-CONCURRENCY = 3
+CONCURRENCY = 1      # free-tier rate limit: 1 concurrent request
 RETRY_LIMIT = 5
-RETRY_DELAY = 2.0
+RETRY_DELAY = 15.0   # base wait on 429 (doubles each retry: 15s, 30s, 60s…)
 
 # ── Tool schema ───────────────────────────────────────────────────────────────
 

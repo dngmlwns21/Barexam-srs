@@ -1,19 +1,20 @@
-"""mock_cards.py — Serve transformed JSON flashcards for frontend testing.
+"""mock_cards.py — Serve OX flashcard data from the database.
 
 Endpoints:
-    GET /api/v1/mock/decks          — deck list with new/learning/review counts
+    GET /api/v1/mock/decks          — per-subject deck stats
     GET /api/v1/mock/cards          — flat list of OX statements (filterable by subject)
+    GET /api/v1/mock/mock-test      — random OX cards for a mock test
 """
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from ..dependencies import get_db
 from ..models import Choice, Question
@@ -21,18 +22,16 @@ from ..schemas import ChoiceOut, QuestionCardOut
 
 router = APIRouter()
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+# choice_number ≥ 101 means OX card (가=101 나=102 다=103 라=104 마=105 …)
+_OX_MIN_NUM = 101
+_IDX_TO_LETTER = {101 + i: l for i, l in enumerate("가나다라마바사아자차카타파하")}
 
 
-def _load_transformed() -> List[Dict[str, Any]]:
-    """Load the most recently created transformed_*.json file."""
-    files = sorted(DATA_DIR.glob("transformed_*.json"), reverse=True)
-    if not files:
-        return []
-    return json.loads(files[0].read_text(encoding="utf-8"))
+def _letter(choice_number: int) -> str:
+    return _IDX_TO_LETTER.get(choice_number, str(choice_number))
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class DeckOut(BaseModel):
     subject: str
@@ -54,10 +53,10 @@ class OXCardOut(BaseModel):
     choice_number: int
     statement: str
     is_correct: bool
-    legal_basis: Optional[str] # Changed from legal_provision
-    case_citation: Optional[str] # Changed from precedent
-    explanation_core: Optional[str] # New field
-    keywords: Optional[List[str]] # New field
+    legal_basis: Optional[str]
+    case_citation: Optional[str]
+    explanation_core: Optional[str]
+    keywords: Optional[List[str]]
     theory: Optional[str]
     is_revised: bool
     revision_note: Optional[str]
@@ -71,92 +70,129 @@ class MockTestCardOut(BaseModel):
     choice: ChoiceOut
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/decks", response_model=List[DeckOut])
-async def get_mock_decks():
-    """Return per-subject deck stats.  All cards are 'new' (no SRS history in mock)."""
-    questions = _load_transformed()
-    counts: Dict[str, int] = {}
-    for q in questions:
-        subj = q.get("subject") or "기타"
-        counts[subj] = counts.get(subj, 0) + len(q.get("ox_statements", []))
+async def get_mock_decks(db: AsyncSession = Depends(get_db)):
+    """Return per-subject OX card counts from the database."""
+    sql = text("""
+        SELECT s.name AS subject, COUNT(c.id) AS total
+        FROM choices c
+        JOIN questions q ON q.id = c.question_id
+        JOIN subjects s ON s.id = q.subject_id
+        WHERE c.choice_number >= :min_num
+        GROUP BY s.name
+        ORDER BY s.name
+    """)
+    rows = (await db.execute(sql, {"min_num": _OX_MIN_NUM})).fetchall()
     return [
         DeckOut(
-            subject=subj,
-            new_count=n,
+            subject=r.subject,
+            new_count=r.total,
             learning_count=0,
             review_count=0,
-            total=n,
+            total=r.total,
         )
-        for subj, n in sorted(counts.items())
+        for r in rows
     ]
 
 
 @router.get("/cards", response_model=List[OXCardOut])
 async def get_mock_cards(
     subject: Optional[str] = Query(None, description="Filter by subject name"),
-    limit: int = Query(200, ge=1, le=1000),
+    limit: int = Query(200, ge=1, le=2000),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Return flat list of OX statements, optionally filtered by subject."""
-    questions = _load_transformed()
-    flat: List[OXCardOut] = []
-    for q in questions:
-        if subject and q.get("subject") != subject:
-            continue
-        for stmt in q.get("ox_statements", []):
-            flat.append(
-                OXCardOut(
-                    raw_id=q["raw_id"],
-                    subject=q.get("subject") or "기타",
-                    year=q.get("year"),
-                    source=q.get("source", ""),
-                    question_number=q["question_number"],
-                    stem=q.get("stem", ""),
-                    overall_explanation=q.get("overall_explanation"),
-                    letter=stmt["letter"],
-                    choice_number=stmt["choice_number"],
-                    statement=stmt["statement"],
-                    is_correct=stmt["is_correct"],
-                    legal_basis=stmt.get("legal_basis"), # Changed from legal_provision
-                    case_citation=stmt.get("case_citation"), # Changed from precedent
-                    explanation_core=stmt.get("explanation_core"), # New field
-                    keywords=stmt.get("keywords", []), # New field
-                    theory=stmt.get("theory"),
-                    is_revised=bool(stmt.get("is_revised", False)),
-                    revision_note=stmt.get("revision_note"),
-                    importance=stmt.get("importance", "B"),
-                    explanation=stmt["explanation"],
-                    is_outdated=bool(q.get("is_outdated", False)),
-                )
-            )
-    return flat[:limit]
+    """Return flat list of OX statements from the database."""
+    sql = text("""
+        SELECT
+            q.id          AS question_id,
+            s.name        AS subject,
+            q.source_year AS year,
+            q.exam_type   AS source,
+            q.question_number,
+            q.stem,
+            q.overall_explanation,
+            q.is_outdated,
+            c.choice_number,
+            c.content     AS statement,
+            c.is_correct,
+            c.legal_basis,
+            c.case_citation,
+            c.explanation_core,
+            c.keywords,
+            c.explanation
+        FROM choices c
+        JOIN questions q ON q.id = c.question_id
+        JOIN subjects  s ON s.id = q.subject_id
+        WHERE c.choice_number >= :min_num
+          AND (:subject IS NULL OR s.name = :subject)
+        ORDER BY q.source_year, q.question_number, c.choice_number
+        LIMIT :limit
+    """)
+    rows = (await db.execute(sql, {
+        "min_num": _OX_MIN_NUM,
+        "subject": subject,
+        "limit": limit,
+    })).fetchall()
+
+    result = []
+    for r in rows:
+        kw = r.keywords
+        if isinstance(kw, str):
+            try:
+                kw = json.loads(kw)
+            except Exception:
+                kw = []
+        elif kw is None:
+            kw = []
+
+        result.append(OXCardOut(
+            raw_id=str(r.question_id),
+            subject=r.subject,
+            year=r.year,
+            source=r.source or "",
+            question_number=r.question_number or 0,
+            stem=r.stem or "",
+            overall_explanation=r.overall_explanation,
+            letter=_letter(r.choice_number),
+            choice_number=r.choice_number,
+            statement=r.statement,
+            is_correct=r.is_correct,
+            legal_basis=r.legal_basis,
+            case_citation=r.case_citation,
+            explanation_core=r.explanation_core,
+            keywords=kw,
+            theory=None,
+            is_revised=False,
+            revision_note=None,
+            importance="B",
+            explanation=r.explanation or "",
+            is_outdated=bool(r.is_outdated),
+        ))
+    return result
 
 
-@router.get("/mock-test", response_model=list[MockTestCardOut])
+@router.get("/mock-test", response_model=List[MockTestCardOut])
 async def get_mock_test(
-    subject_id: int | None = None,
+    subject_id: Optional[str] = None,
     num_cards: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    지정된 수의 무작위 OX 카드로 모의고사를 생성합니다.
-    OX 카드는 문제와 그에 속한 선택지 하나가 조합된 형태입니다.
-    """
-    query = db.query(Choice).options(joinedload(Choice.question).joinedload(Question.subject))
-
+    """Return random OX cards for a mock test."""
+    q = (
+        select(Choice)
+        .options(joinedload(Choice.question).joinedload(Question.subject))
+        .where(Choice.choice_number >= _OX_MIN_NUM)
+        .order_by(func.random())
+        .limit(num_cards)
+    )
     if subject_id:
-        query = query.join(Question).filter(Question.subject_id == subject_id)
+        q = q.join(Question).filter(Question.subject_id == subject_id)
 
-    # 데이터베이스에서 효율적으로 무작위 선택지를 가져옵니다.
-    random_choices = query.order_by(func.random()).limit(num_cards).all()
-
-    if not random_choices:
-        return []
-
-    # MockTestCardOut 객체들을 구성합니다.
-    mock_test_cards = [
-        MockTestCardOut(question=choice.question, choice=choice) for choice in random_choices
+    result = await db.execute(q)
+    choices = result.scalars().unique().all()
+    return [
+        MockTestCardOut(question=c.question, choice=c)
+        for c in choices
     ]
-
-    return mock_test_cards

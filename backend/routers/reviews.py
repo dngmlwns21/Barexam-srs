@@ -15,6 +15,7 @@ from ..models import (
     Question,
     ReviewLog,
     StudySession,
+    Subject,
     User,
     UserProgress,
 )
@@ -381,6 +382,8 @@ async def undo_last_review(
 @router.get("/history", response_model=List[ReviewLogOut])
 async def get_history(
     flashcard_id: Optional[uuid.UUID] = Query(None),
+    wrong_only:   bool                = Query(False, description="오답만 보기"),
+    subject_id:   Optional[uuid.UUID] = Query(None),
     limit:        int = Query(50, ge=1, le=200),
     offset:       int = Query(0,  ge=0),
     db: AsyncSession = Depends(get_db),
@@ -388,7 +391,11 @@ async def get_history(
 ):
     stmt = (
         select(ReviewLog)
-        .options(selectinload(ReviewLog.flashcard).selectinload(Flashcard.question))
+        .options(
+            selectinload(ReviewLog.flashcard)
+            .selectinload(Flashcard.question)
+            .selectinload(Question.subject)
+        )
         .where(ReviewLog.user_id == current_user.id)
         .order_by(ReviewLog.reviewed_at.desc())
         .offset(offset)
@@ -396,19 +403,31 @@ async def get_history(
     )
     if flashcard_id:
         stmt = stmt.where(ReviewLog.flashcard_id == flashcard_id)
+    if wrong_only:
+        stmt = stmt.where(ReviewLog.was_correct == False)
+    if subject_id:
+        fc_sub = (
+            select(Flashcard.id)
+            .join(Question, Question.id == Flashcard.question_id)
+            .where(Question.subject_id == subject_id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(ReviewLog.flashcard_id.in_(fc_sub))
 
     result = await db.execute(stmt)
     logs   = result.scalars().all()
     out    = []
     for log in logs:
         fc = log.flashcard
+        q  = fc.question if fc else None
         out.append(ReviewLogOut(
             id=log.id,
             flashcard_id=log.flashcard_id,
             rating=log.rating,
             was_correct=log.was_correct,
             reviewed_at=log.reviewed_at,
-            question_stem=fc.question.stem if fc and fc.question else None,
+            question_stem=q.stem if q else None,
             card_type=fc.type if fc else None,
+            subject_name=q.subject.name if q and q.subject else None,
         ))
     return out

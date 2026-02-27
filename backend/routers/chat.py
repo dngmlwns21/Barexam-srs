@@ -55,7 +55,7 @@ async def chat_explain(request: ChatRequest):
 
     try:
         vertexai.init(project=project, location=location)
-        model = GenerativeModel("gemini-1.5-pro", system_instruction=system_prompt)
+        model = GenerativeModel("gemini-2.0-flash", system_instruction=system_prompt)
 
         history = []
         for h in (request.history or []):
