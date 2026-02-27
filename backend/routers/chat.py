@@ -1,4 +1,4 @@
-"""chat.py — AI Tutor endpoint using Claude API with RAG context."""
+"""chat.py — AI Tutor endpoint using Vertex AI Gemini with RAG context."""
 from __future__ import annotations
 
 import os
@@ -31,15 +31,17 @@ class ChatResponse(BaseModel):
 
 @router.post("/explain", response_model=ChatResponse)
 async def chat_explain(request: ChatRequest):
-    """AI Tutor: explains a flashcard using Claude with injected card context."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
+    """AI Tutor: explains a flashcard using Gemini with injected card context."""
+    project = os.getenv("VERTEXAI_PROJECT")
+    location = os.getenv("VERTEXAI_LOCATION", "us-central1")
+    if not project:
+        raise HTTPException(status_code=503, detail="VERTEXAI_PROJECT not configured")
 
     try:
-        import anthropic
+        import vertexai
+        from vertexai.generative_models import GenerativeModel, Content, Part
     except ImportError:
-        raise HTTPException(status_code=503, detail="anthropic package not installed")
+        raise HTTPException(status_code=503, detail="google-cloud-aiplatform package not installed")
 
     system_prompt = (
         "당신은 한국 변호사시험 전문 AI 튜터입니다. "
@@ -51,21 +53,19 @@ async def chat_explain(request: ChatRequest):
     if request.context:
         system_prompt += f"\n\n[현재 학습 중인 카드 내용]\n{request.context}"
 
-    messages = []
-    for h in (request.history or []):
-        messages.append({"role": h.role, "content": h.content})
-    messages.append({"role": "user", "content": request.message})
-
     try:
-        client = anthropic.AsyncAnthropic(api_key=api_key)
-        resp = await client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=system_prompt,
-            messages=messages,
-        )
-        answer = resp.content[0].text if resp.content else "응답을 생성할 수 없습니다."
+        vertexai.init(project=project, location=location)
+        model = GenerativeModel("gemini-1.5-pro", system_instruction=system_prompt)
+
+        history = []
+        for h in (request.history or []):
+            role = "user" if h.role == "user" else "model"
+            history.append(Content(role=role, parts=[Part.from_text(h.content)]))
+
+        chat = model.start_chat(history=history)
+        response = await chat.send_message_async(request.message)
+        answer = response.text or "응답을 생성할 수 없습니다."
         return ChatResponse(response=answer)
     except Exception as e:
-        log.error("Claude API error: %s", e)
+        log.error("Gemini API error: %s", e)
         raise HTTPException(status_code=502, detail=f"AI 튜터 오류: {e}")
