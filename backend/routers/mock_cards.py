@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from ..database import get_db
+from ..dependencies import get_db
 from ..models import Choice, Question
 from ..schemas import ChoiceOut, QuestionCardOut
 
