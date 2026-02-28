@@ -75,8 +75,9 @@ OX_TOOL = {
                     "type": "object",
                     "required": [
                         "letter", "choice_number", "statement",
-                        "is_correct", "importance", "explanation",
-                        "explanation_core", "keywords",
+                        "is_correct", "importance",
+                        "conclusion", "core_reasoning", "detailed_explanation", "citation",
+                        "explanation_core", "explanation", "keywords",
                     ],
                     "properties": {
                         "letter": {
@@ -118,11 +119,47 @@ OX_TOOL = {
                                 "Omit if not applicable."
                             ),
                         },
+                        "conclusion": {
+                            "type": "string",
+                            "enum": ["O", "X", "O, X"],
+                            "description": (
+                                "판단 결론: 'O' (법적으로 옳음), 'X' (법적으로 틀림), "
+                                "또는 'O, X' (조건에 따라 다름). "
+                                "교재의 정답 뱃지(□)에 표시될 값입니다."
+                            ),
+                        },
+                        "core_reasoning": {
+                            "type": "string",
+                            "description": (
+                                "결론 도출의 핵심 법원리를 한 문장으로 직접 서술. "
+                                "예: '채무불이행으로 인한 손해배상은 이행이익을 원칙으로 한다.' "
+                                "교재의 굵은 핵심 문장에 해당합니다."
+                            ),
+                        },
+                        "detailed_explanation": {
+                            "type": "string",
+                            "description": (
+                                "단계별 논리 전개. 판례가 복잡하거나 논거가 여럿이면 "
+                                "①, ②, ③으로 각 논거를 명확히 분리하세요. "
+                                "핵심 법률용어(예: **손해배상**, **이행이익**)는 **굵게** 강조하세요. "
+                                "예: '① **채무불이행**이 성립하면 ② 채권자는 **이행이익** 상당액을 청구할 수 있으나, "
+                                "③ 채권자가 계약을 해제한 경우에는 **신뢰이익**도 청구 가능하다.'"
+                            ),
+                        },
+                        "citation": {
+                            "type": "string",
+                            "description": (
+                                "정확한 법적 근거를 괄호 안에 표기. "
+                                "법령 예: '(민법 제390조 제2항)' "
+                                "판례 예: '(대법원 2018. 3. 25. 선고 2017다1234 판결)' "
+                                "둘 다 있으면 세미콜론으로 구분: '(민법 제390조; 대법원 2018다1234)'"
+                            ),
+                        },
                         "explanation_core": {
                             "type": "string",
                             "description": (
-                                "A single, core sentence that directly explains the reason for O/X. "
-                                "This is the most crucial part of the explanation."
+                                "core_reasoning과 동일 내용. "
+                                "A single, core sentence that directly explains the reason for O/X."
                             ),
                         },
                         "keywords": {
@@ -163,9 +200,9 @@ OX_TOOL = {
                         "explanation": {
                             "type": "string",
                             "description": (
-                                "Full instructor-level explanation (3-6 sentences) citing "
-                                "legal_basis, case_citation, and theory. Conclude with "
-                                "why this statement is O or X."
+                                "detailed_explanation과 동일 내용. "
+                                "Full step-by-step explanation using ①②③ for multiple arguments "
+                                "and **bold** for key legal terms."
                             ),
                         },
                     },
@@ -213,15 +250,26 @@ def _build_prompt(q: RawQuestion, retrieved_context: Optional[str] = None) -> st
 
 [정답] {correct_letter}번 ({q.correct_choice}번) → 이 선택지의 법률적 명제는 O (정답)
 {context_section}
-[변환 지침]
-1. 각 선택지를 문제 지문에 의존하지 않는 독립적 O/X 명제로 재작성하세요.
+[변환 지침] — UNION 변호사시험 OX 교재 형식
+1. 각 선택지를 문제 지문에 의존하지 않는 독립적 O/X 명제(statement)로 재작성하세요.
    - 예: "甲은 ~ 할 수 있다" → "채무자가 [구체적 상황]인 경우 채권자는 ~ 할 수 있다."
-2. 법률 조문(legal_basis), 판례 번호(case_citation)는 정확히 인용하세요.
-3. 핵심 해설(explanation_core)은 O/X 판단의 가장 중요한 이유를 한 문장으로 요약하여 작성하세요.
-4. 키워드(keywords)는 3~5개의 핵심 법률 용어를 리스트로 제공하세요.
-5. 중요도: 반복 출제 핵심 쟁점=A, 정기 출제=B, 드문 쟁점=C
-6. 최근 법령 개정 또는 판례 변경으로 정답이 바뀔 수 있으면 is_revised=true로 설정하세요.
-7. 설명은 강사 수준으로 작성하되 한국어로 작성하세요.
+2. conclusion: is_correct와 동일하게 "O" 또는 "X". 조건부 정답이면 "O, X".
+   - 교재의 □ 뱃지에 표시됩니다.
+3. core_reasoning: 결론의 핵심 법원리를 한 문장으로 직접 서술하세요.
+   - 예: "계약 해제 후에도 채권자는 이행이익과 신뢰이익 중 선택하여 청구할 수 있다."
+4. detailed_explanation: 단계별 논리 전개 (3~6문장 또는 ①②③ 번호 형식).
+   - 판례의 논거가 여럿이면 반드시 ①, ②, ③으로 분리하세요.
+   - **핵심 법률용어**는 **굵게** 강조하세요. 예: **손해배상**, **이행이익**
+   - 마지막에 "따라서 이 명제는 O/X이다." 형식으로 결론을 맺으세요.
+5. citation: 정확한 법적 근거를 괄호 안에 표기하세요.
+   - 법령: "(민법 제390조 제2항)"
+   - 판례: "(대법원 2018. 3. 25. 선고 2017다1234 판결)"
+   - 둘 다: "(민법 제390조; 대법원 2018다1234 판결)"
+6. legal_basis: 조문 번호만, explanation_core: core_reasoning과 동일내용, explanation: detailed_explanation과 동일내용
+7. 키워드(keywords): 3~5개 핵심 법률 용어 리스트.
+8. 중요도: 반복 출제 핵심 쟁점=A, 정기 출제=B, 드문 쟁점=C
+9. 최근 법령 개정 또는 판례 변경으로 정답이 바뀔 수 있으면 is_revised=true로 설정하세요.
+10. 모든 내용은 한국어로, 강사 수준의 정확성으로 작성하세요.
 
 submit_ox_analysis 도구를 사용해 결과를 제출하세요."""
 
@@ -305,21 +353,40 @@ class MCQTransformer:
         ox_list: List[OXStatement] = []
         for i, stmt in enumerate(raw.get("ox_statements", [])):
             try:
+                is_correct = bool(stmt["is_correct"])
+                # Derive conclusion from LLM output or is_correct
+                conclusion = stmt.get("conclusion", "O" if is_correct else "X")
+                # core_reasoning: prefer new field, fall back to explanation_core
+                core_reasoning = stmt.get("core_reasoning") or stmt.get("explanation_core")
+                # detailed_explanation: prefer new field, fall back to explanation
+                detailed_explanation = stmt.get("detailed_explanation") or stmt.get("explanation", "")
+                # citation: prefer new field, construct from legal_basis/case_citation
+                citation = stmt.get("citation")
+                if not citation:
+                    parts = [p for p in [stmt.get("legal_basis"), stmt.get("case_citation")] if p]
+                    if parts:
+                        citation = "(" + "; ".join(parts) + ")"
                 ox_list.append(
                     OXStatement(
                         letter=stmt.get("letter", OX_LETTERS[i]),
                         choice_number=stmt.get("choice_number", i + 1),
                         statement=stmt["statement"],
-                        is_correct=bool(stmt["is_correct"]),
-                        legal_basis=stmt.get("legal_basis"), # Changed from legal_provision
-                        case_citation=stmt.get("case_citation"), # Changed from precedent
-                        explanation_core=stmt.get("explanation_core"), # New field
-                        keywords=stmt.get("keywords", []), # New field
+                        is_correct=is_correct,
+                        # Textbook-style fields
+                        conclusion=conclusion,
+                        core_reasoning=core_reasoning,
+                        detailed_explanation=detailed_explanation,
+                        citation=citation,
+                        # Legacy / enrichment fields
+                        legal_basis=stmt.get("legal_basis"),
+                        case_citation=stmt.get("case_citation"),
+                        explanation_core=core_reasoning,   # mirror to DB column
+                        keywords=stmt.get("keywords", []),
                         theory=stmt.get("theory"),
                         is_revised=bool(stmt.get("is_revised", False)),
                         revision_note=stmt.get("revision_note"),
                         importance=ImportanceGrade(stmt.get("importance", "B")),
-                        explanation=stmt["explanation"],
+                        explanation=detailed_explanation,  # mirror to DB column
                     )
                 )
             except (KeyError, ValidationError) as exc:

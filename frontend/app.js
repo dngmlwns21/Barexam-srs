@@ -3,6 +3,103 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 const API = '/api/v1';
 
+// ── Feature 4: Citation Regex Parser ─────────────────────────────────────────
+//
+// Wraps detected Korean legal citations in clickable buttons that open the
+// Mini Legal Dictionary (Feature 2) with the citation pre-populated.
+//
+// Patterns matched (in priority order — single-pass combined regex):
+//   1. Supreme Court cases:  대법원 2018. 3. 25. 선고 2017다1234 판결
+//   2. Constitutional Court: 헌법재판소 2020. 9. 24. 선고 2017헌바123 결정
+//   3. Named law + article:  민법 제390조 제2항 제1호
+//   4. Bare article ref:     제390조의2 제1항
+const _CITATION_RE = new RegExp(
+  '(' +
+  // SC case
+  '대법원\\s*\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\.\\s*(?:선고|자)\\s*[\\d가-힣]+\\s*(?:판결|결정|전원합의체\\s*판결)' +
+  '|' +
+  // CC decision
+  '헌법재판소\\s*\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\.\\s*(?:선고|자)\\s*[\\d가-힣]+\\s*(?:결정|헌결)' +
+  '|' +
+  // Named law + article
+  '(?:민법|형법|상법|헌법|행정기본법|행정소송법|행정절차법|국가배상법|국세기본법|' +
+  '민사소송법|형사소송법|민사집행법|채무자\\s*회생\\s*및\\s*파산에\\s*관한\\s*법률|' +
+  '국제사법|상속세\\s*및\\s*증여세법|부동산등기법|공탁법)\\s*제\\d+조(?:의\\d+)?(?:\\s*제\\d+항)?(?:\\s*제\\d+호)?' +
+  '|' +
+  // Bare article (only when standalone — not preceded by a letter or digit)
+  '(?<![가-힣\\d])제\\d+조(?:의\\d+)?(?:\\s*제\\d+항)?(?:\\s*제\\d+호)?' +
+  ')',
+  'g'
+);
+
+/**
+ * Wrap citation patterns inside already-escaped HTML with clickable buttons.
+ * Must be called AFTER esc()/fmt() so we're working on final HTML.
+ */
+function linkCitations(html) {
+  if (!html) return html;
+  return html.replace(_CITATION_RE, (match) => {
+    const encoded = match.replace(/"/g, '&quot;');
+    return `<button class="citation-link" onclick="openCitationDict('${encoded}')">${match}</button>`;
+  });
+}
+
+/** fmt() + citation linking — use this wherever explanation text is rendered. */
+function fmtCite(text) {
+  return linkCitations(fmt(text));
+}
+
+// ── Feature 2: Mini Legal Dictionary ─────────────────────────────────────────
+
+function openCitationDict(query) {
+  showMiniDict(query);
+}
+
+function showMiniDict(query) {
+  const panel = document.getElementById('mini-dict-panel');
+  if (!panel) return;
+  panel.classList.add('open');
+  if (query) {
+    const input = document.getElementById('mini-dict-input');
+    if (input) {
+      input.value = query;
+      performDictSearch(query);
+    }
+  }
+}
+
+function closeMiniDict() {
+  document.getElementById('mini-dict-panel')?.classList.remove('open');
+}
+
+async function performDictSearch(q) {
+  q = (q || '').trim();
+  if (!q) return;
+  const resultsEl = document.getElementById('mini-dict-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<div class="dict-loading">🔍 검색 중…</div>';
+  try {
+    const data = await api.get(`/dictionary/search?q=${encodeURIComponent(q)}`);
+    if (!data || data.length === 0) {
+      resultsEl.innerHTML = '<div class="dict-empty">검색 결과가 없습니다.</div>';
+      return;
+    }
+    resultsEl.innerHTML = data.map(item => `
+      <div class="dict-result-item">
+        <div class="dict-result-type ${esc(item.type)}">${
+          item.type === 'statute' ? '📖 법령' : item.type === 'precedent' ? '⚖️ 판례' : '🗂 카드'
+        }</div>
+        <div class="dict-result-title">${esc(item.title)}</div>
+        ${item.snippet ? `<div class="dict-result-snippet">${esc(item.snippet)}</div>` : ''}
+        ${item.date ? `<div class="dict-result-snippet">시행일: ${esc(item.date)}</div>` : ''}
+        ${item.url ? `<a class="dict-result-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">원문 보기 →</a>` : ''}
+      </div>
+    `).join('');
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="dict-error-msg">오류: ${esc(err.message)}</div>`;
+  }
+}
+
 // ── Token helpers ─────────────────────────────────────────────────────────────
 const tokens = {
   get access()  { return localStorage.getItem('access_token'); },
@@ -901,26 +998,60 @@ function renderResult() {
     `;
   }
 
-  // Explanation Core (for OX cards)
-  const explanationCoreHtml = (isOX && card.choice.explanation_core) ? `
-    <div class="explanation">
-      <div class="explanation-title">핵심 해설</div>
-      <div class="explanation-text">${fmt(card.choice.explanation_core)}</div>
-    </div>
-  ` : '';
+  // ── Feature 1: Textbook-Style Explanation (UNION OX Format) ─────────────
+  const ch = isOX ? card.choice : null;
 
-  // Full Explanation
-  const explanation = isOX ? q.explanation : S.revealData.explanation;
-  const fullExplanationHtml = `
-    <div class="explanation">
-      <div class="explanation-title">상세 해설</div>
-      <div class="explanation-text">${
-        explanation
-          ? fmt(explanation)
-          : '<span class="explanation-placeholder">해설이 아직 제공되지 않은 문항입니다.</span>'
-      }</div>
-    </div>
-  `;
+  // Detect if this card has the new structured explanation fields
+  const hasTextbook = isOX && ch && (ch.explanation_core || ch.explanation);
+
+  let explanationCoreHtml = '';
+  let fullExplanationHtml = '';
+
+  if (hasTextbook) {
+    // New textbook block: □ badge + core reasoning + ①②③ detail + citation
+    const isCorrect   = ch.is_correct;
+    const conclusion  = isCorrect ? 'O' : 'X';
+    const badgeClass  = isCorrect ? 'badge-o' : 'badge-x';
+    const coreReason  = ch.explanation_core || '';   // one-sentence principle
+    const detailText  = ch.explanation || '';        // step-by-step ①②③
+    // Build citation from legal_basis + case_citation if not a single field
+    const citParts    = [ch.legal_basis, ch.case_citation].filter(Boolean);
+    const citStr      = citParts.length ? '(' + citParts.join('; ') + ')' : '';
+
+    explanationCoreHtml = `
+      <div class="textbook-explanation">
+        <div class="textbook-conclusion">
+          <span class="conclusion-badge ${badgeClass}">${esc(conclusion)}</span>
+          ${coreReason ? `<span class="core-reasoning">${fmtCite(coreReason)}</span>` : ''}
+        </div>
+        ${detailText ? `<div class="textbook-detail">${fmtCite(detailText)}</div>` : ''}
+        ${citStr ? `<div class="textbook-citation">${linkCitations(esc(citStr))}</div>` : ''}
+      </div>
+    `;
+    // No separate fullExplanationHtml when textbook format is used
+  } else {
+    // Legacy: show explanation_core as "핵심 해설" chip
+    if (isOX && ch && ch.explanation_core) {
+      explanationCoreHtml = `
+        <div class="explanation">
+          <div class="explanation-title">핵심 해설</div>
+          <div class="explanation-text">${fmtCite(ch.explanation_core)}</div>
+        </div>
+      `;
+    }
+    // Full Explanation (legacy)
+    const explanation = isOX ? q.explanation : S.revealData.explanation;
+    fullExplanationHtml = `
+      <div class="explanation">
+        <div class="explanation-title">상세 해설</div>
+        <div class="explanation-text">${
+          explanation
+            ? fmtCite(explanation)
+            : '<span class="explanation-placeholder">해설이 아직 제공되지 않은 문항입니다.</span>'
+        }</div>
+      </div>
+    `;
+  }
 
   // Rich metadata — Union Textbook Style: blue box for statute, purple box for precedent
   const oxRaw = card._ox;
@@ -934,8 +1065,8 @@ function renderResult() {
     const impMap = { A: '🔴 핵심 (A)', B: '🟡 표준 (B)', C: '⚪ 주변 (C)' };
     let html = '';
     if (importance)   html += `<div class="importance-badge importance-${importance}">${impMap[importance] || importance}</div>`;
-    if (legalBasis)   html += `<div class="legal-basis-box"><span class="legal-box-label">📖 법령 근거</span><div class="legal-box-text">${fmt(legalBasis)}</div></div>`;
-    if (caseCitation) html += `<div class="case-citation-box"><span class="legal-box-label">⚖️ 판례</span><div class="legal-box-text">${fmt(caseCitation)}</div></div>`;
+    if (legalBasis)   html += `<div class="legal-basis-box"><span class="legal-box-label">📖 법령 근거</span><div class="legal-box-text">${fmtCite(legalBasis)}</div></div>`;
+    if (caseCitation) html += `<div class="case-citation-box"><span class="legal-box-label">⚖️ 판례</span><div class="legal-box-text">${fmtCite(caseCitation)}</div></div>`;
     if (theory)       html += `<div class="theory-row">💡 ${esc(theory)}</div>`;
     if (isRevised && revisionNote) html += `<div class="ox-revision-note">⚠️ 개정: ${esc(revisionNote)}</div>`;
     return html ? `<div class="legal-meta-section">${html}</div>` : '';
@@ -2302,6 +2433,48 @@ function _startMockTimer() {
   document.getElementById('help-modal').addEventListener('click', e => {
     if (e.target === document.getElementById('help-modal')) hideHelpModal();
   });
+
+  // ── Feature 2: Inject Mini Dictionary panel + FAB ────────────────────────
+  const _dictPanel = document.createElement('div');
+  _dictPanel.id        = 'mini-dict-panel';
+  _dictPanel.className = 'mini-dict-panel';
+  _dictPanel.setAttribute('role', 'dialog');
+  _dictPanel.setAttribute('aria-label', '미니 법률사전');
+  _dictPanel.innerHTML = `
+    <div class="mini-dict-header">
+      <span class="mini-dict-title">📚 미니 법률사전</span>
+      <button class="mini-dict-close" id="mini-dict-close" aria-label="닫기">✕</button>
+    </div>
+    <div class="mini-dict-search-row">
+      <input type="search" id="mini-dict-input" class="mini-dict-input"
+             placeholder="법령명, 조문번호, 판례번호 입력…"
+             autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button id="mini-dict-search-btn" class="mini-dict-search-btn">검색</button>
+    </div>
+    <div id="mini-dict-results" class="mini-dict-results">
+      <div class="dict-empty">검색어를 입력하세요</div>
+    </div>
+  `;
+  document.getElementById('app').appendChild(_dictPanel);
+
+  const _dictFab = document.createElement('button');
+  _dictFab.id        = 'mini-dict-btn';
+  _dictFab.className = 'mini-dict-fab';
+  _dictFab.title     = '미니 법률사전 (법령·판례 검색)';
+  _dictFab.setAttribute('aria-label', '미니 법률사전');
+  _dictFab.textContent = '📚';
+  document.body.appendChild(_dictFab);
+
+  _dictFab.addEventListener('click', () => showMiniDict());
+  document.getElementById('mini-dict-close').addEventListener('click', closeMiniDict);
+  document.getElementById('mini-dict-search-btn').addEventListener('click', () => {
+    performDictSearch(document.getElementById('mini-dict-input').value);
+  });
+  document.getElementById('mini-dict-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') performDictSearch(document.getElementById('mini-dict-input').value);
+  });
+  // Close on outside click
+  _dictPanel.addEventListener('click', e => { if (e.target === _dictPanel) closeMiniDict(); });
 
   if (tokens.exists()) {
     await showHome();

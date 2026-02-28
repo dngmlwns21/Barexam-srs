@@ -25,14 +25,17 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, engine
-from .routers import auth, cards, dashboard, flashcards, mock_cards, questions, reviews, stats, subjects, tags, users, pipeline, chat
+from .routers import auth, cards, dashboard, dictionary, flashcards, mock_cards, questions, reviews, stats, subjects, tags, users, pipeline, chat
+from .scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Tables already exist in Supabase (applied via 001_initial.sql).
+    # Tables already exist in DB (applied via SQL migrations).
     # Connection is made lazily on first request.
+    start_scheduler()
     yield
+    stop_scheduler()
     await engine.dispose()
 
 
@@ -70,6 +73,7 @@ app.include_router(cards.router,       prefix="/api/v1/cards",      tags=["Cards
 app.include_router(mock_cards.router,  prefix="/api/v1/mock",       tags=["Mock"])
 app.include_router(pipeline.router,    prefix="/api/v1/pipeline",   tags=["Pipeline"])
 app.include_router(chat.router,        prefix="/api/v1/chat",       tags=["Chat"])
+app.include_router(dictionary.router,  prefix="/api/v1/dictionary", tags=["Dictionary"])
 
 
 @app.get("/health", tags=["Health"])

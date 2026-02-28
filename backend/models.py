@@ -127,11 +127,15 @@ class Question(Base):
     correct_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
-    
+
     # Phase 2: Added requested fields to Question (for non-MCQ compatibility)
     legal_basis:      Mapped[Optional[str]] = mapped_column(String)
     case_citation:    Mapped[Optional[str]] = mapped_column(String)
     explanation_core: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Feature 3: Citation update tracker (migration 004)
+    last_citation_check_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    citation_check_status:  Mapped[Optional[str]]      = mapped_column(String, default="unchecked")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -176,7 +180,8 @@ class Choice(Base):
     # Phase 2: Refactored Card Model fields
     legal_basis:      Mapped[Optional[str]] = mapped_column(String)
     case_citation:    Mapped[Optional[str]] = mapped_column(String)
-    explanation_core: Mapped[Optional[str]] = mapped_column(Text)
+    explanation_core: Mapped[Optional[str]] = mapped_column(Text)   # core_reasoning
+    explanation:      Mapped[Optional[str]] = mapped_column(Text)   # detailed_explanation (①②③)
     keywords:         Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (

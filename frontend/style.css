@@ -2554,3 +2554,294 @@ body.dark-mode .weekly-chart-card   { background: #1E293B; }
 body.dark-mode .hf-btn              { background: #1E293B; border-color: #334155; color: #94A3B8; }
 body.dark-mode .hf-btn.active       { background: rgba(37,99,235,.2); border-color: #3B82F6; color: #93C5FD; }
 body.dark-mode .review-subject-tag  { background: #0F172A; color: #94A3B8; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEATURE 1 — Textbook-Style Explanation (UNION OX Format)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Container */
+.textbook-explanation {
+  background: #f4f8ff;
+  border: 1.5px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 0 12px 12px 0;
+  padding: 14px 16px;
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Conclusion row: badge + core sentence */
+.textbook-conclusion {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+/* Square OX badge — replicates textbook □ style */
+.conclusion-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 900;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+.badge-o  { background: #16A34A; color: #fff; }
+.badge-x  { background: #DC2626; color: #fff; }
+.badge-ox { background: #7C3AED; color: #fff; }
+
+/* Core reasoning — the one-sentence principle */
+.core-reasoning {
+  font-size: .91rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.55;
+  flex: 1;
+}
+
+/* Step-by-step breakdown */
+.textbook-detail {
+  font-size: .87rem;
+  color: #1e3a5f;
+  line-height: 1.75;
+  padding-left: 10px;
+  border-left: 3px solid #c7daf5;
+}
+.textbook-detail strong { color: #0f3460; font-weight: 700; }
+
+/* Citation line at bottom */
+.textbook-citation {
+  font-size: .78rem;
+  color: var(--text-muted);
+  font-style: italic;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEATURE 4 — Clickable Auto-linked Citations
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.citation-link {
+  display: inline;
+  background: none;
+  border: none;
+  border-bottom: 1.5px dashed var(--primary);
+  color: var(--primary);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 1px;
+  line-height: inherit;
+  transition: background .12s, color .12s;
+}
+.citation-link:hover {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  border-radius: 3px;
+  border-bottom-style: solid;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEATURE 2 — Mini Legal Dictionary (Floating)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Floating trigger button */
+.mini-dict-fab {
+  position: fixed;
+  bottom: 136px;          /* above bottom-nav (64px) + ai-fab (48+8px) + margin */
+  right: 16px;
+  width: 46px;
+  height: 46px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  font-size: 1.25rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .15s, box-shadow .15s;
+}
+.mini-dict-fab:hover {
+  transform: scale(1.1);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Slide-up panel */
+.mini-dict-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 58vh;
+  background: var(--card);
+  border-top: 2px solid var(--primary);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -4px 24px rgba(20,121,252,.14);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform .28s cubic-bezier(.4,0,.2,1);
+  will-change: transform;
+}
+@media (min-width: 600px) {
+  .mini-dict-panel {
+    left: auto;
+    width: 420px;
+    right: 16px;
+    bottom: 80px;
+    border-radius: 16px;
+    border: 1.5px solid var(--border);
+    border-top: 2px solid var(--primary);
+  }
+}
+.mini-dict-panel.open { transform: translateY(0); }
+
+.mini-dict-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mini-dict-title {
+  font-weight: 700;
+  font-size: .95rem;
+  color: var(--primary);
+}
+.mini-dict-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: inherit;
+  transition: background .1s;
+}
+.mini-dict-close:hover { background: var(--bg); }
+
+.mini-dict-search-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mini-dict-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .88rem;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+  transition: border-color .15s;
+}
+.mini-dict-input:focus { border-color: var(--primary); background: #fff; }
+.mini-dict-search-btn {
+  padding: 8px 14px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.mini-dict-search-btn:hover { background: var(--primary-dark); }
+
+.mini-dict-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 14px 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dict-loading, .dict-empty {
+  padding: 20px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: .88rem;
+}
+.dict-error-msg {
+  padding: 12px 0;
+  color: var(--danger);
+  font-size: .85rem;
+  text-align: center;
+}
+
+.dict-result-item {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dict-result-item:last-child { border-bottom: none; }
+
+.dict-result-type {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.dict-result-type.statute  { background: #EFF6FF; color: #1D4ED8; }
+.dict-result-type.precedent{ background: #FDF4FF; color: #7C3AED; }
+.dict-result-type.card     { background: #F0FDF4; color: #15803D; }
+
+.dict-result-title {
+  font-weight: 700;
+  font-size: .88rem;
+  color: var(--text);
+  margin-bottom: 3px;
+  line-height: 1.4;
+}
+.dict-result-snippet {
+  font-size: .81rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-bottom: 4px;
+}
+.dict-result-link {
+  font-size: .77rem;
+  color: var(--primary);
+  text-decoration: none;
+}
+.dict-result-link:hover { text-decoration: underline; }
+
+/* ── Dark-mode overrides ─────────────────────────────────────────────────── */
+body.dark-mode .textbook-explanation  { background: #0e1f35; border-color: #1e3a5a; border-left-color: var(--primary); }
+body.dark-mode .textbook-detail       { color: #a0bfdf; border-left-color: #1e3a5a; }
+body.dark-mode .textbook-detail strong{ color: #c9dff7; }
+body.dark-mode .textbook-citation     { border-top-color: #1e3a5a; }
+body.dark-mode .mini-dict-panel       { background: #111c2d; border-color: #1e3a5a; }
+body.dark-mode .mini-dict-input       { background: #0a1628; border-color: #1e3a5a; color: #e2e8f0; }
+body.dark-mode .mini-dict-input:focus { background: #0e1f35; }
+body.dark-mode .mini-dict-fab         { background: #111c2d; border-color: #1e3a5a; }
+body.dark-mode .dict-result-item      { border-color: #1e3a5a; }
+body.dark-mode .dict-result-type.statute  { background: #0f2040; color: #7eb3ff; }
+body.dark-mode .dict-result-type.precedent{ background: #1a0f2e; color: #c084fc; }
+body.dark-mode .dict-result-type.card    { background: #0a2018; color: #4ade80; }

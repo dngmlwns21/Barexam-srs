@@ -131,10 +131,11 @@ class ChoiceOut(BaseModel):
     choice_number: int
     content:       str
     is_correct:    bool
-    legal_basis: Optional[str] = None
-    case_citation: Optional[str] = None
-    explanation_core: Optional[str] = None
-    keywords: Optional[List[str]] = None # New field
+    legal_basis:      Optional[str]       = None
+    case_citation:    Optional[str]       = None
+    explanation_core: Optional[str]       = None   # core_reasoning (one sentence)
+    explanation:      Optional[str]       = None   # detailed_explanation (step-by-step ①②③)
+    keywords:         Optional[List[str]] = None
 
     model_config = {"from_attributes": True}
 

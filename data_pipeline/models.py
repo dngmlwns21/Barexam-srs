@@ -69,18 +69,28 @@ class OXStatement(BaseModel):
     choice_number:    int                    # 1–5 (original MCQ choice)
     statement:        str                    # Standalone O/X proposition
     is_correct:       bool                   # True=O (correct), False=X (wrong)
-    
-    # Updated fields for Union Textbook Style
-    legal_basis:      Optional[str] = None   # 관련 조문 (was legal_provision)
-    case_citation:    Optional[str] = None   # 판례 (was precedent)
-    explanation_core: Optional[str] = None   # 핵심 해설 (New)
-    keywords:         List[str]     = Field(default_factory=list) # 키워드 (New)
-    
+
+    # ── Textbook-style structured explanation (UNION OX format) ──────────────
+    # conclusion: "O" | "X" | "O, X" — rendered as square badge
+    conclusion:          str             = ""
+    # core_reasoning: one direct sentence stating the bottom-line legal principle
+    core_reasoning:      Optional[str]   = None
+    # detailed_explanation: step-by-step; complex precedents use ①②③; **bold** key terms
+    detailed_explanation: Optional[str] = None
+    # citation: formatted legal basis at the end, e.g. "(민법 제104조)" or "(대법원 ...)"
+    citation:            Optional[str]   = None
+
+    # ── Legacy / enrichment fields ────────────────────────────────────────────
+    legal_basis:      Optional[str] = None   # 관련 조문
+    case_citation:    Optional[str] = None   # 판례
+    explanation_core: Optional[str] = None   # 핵심 해설 (maps to core_reasoning in DB)
+    keywords:         List[str]     = Field(default_factory=list)
+
     theory:           Optional[str] = None   # 학설
     is_revised:       bool          = False  # 최근 개정/판례 변경 여부
     revision_note:    Optional[str] = None   # 개정 내용
     importance:       ImportanceGrade        # A/B/C
-    explanation:      str                    # Instructor-level explanation
+    explanation:      str                    # Detailed explanation (maps to detailed_explanation)
 
 
 class TransformedQuestion(BaseModel):
