@@ -319,3 +319,34 @@ class StudySession(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="study_sessions")
+
+
+# ── Legal Dictionary ───────────────────────────────────────────────────────────
+
+class LawStatute(Base):
+    __tablename__ = "law_statutes"
+
+    id:             Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    law_id:         Mapped[str]            = mapped_column(String, unique=True, nullable=False)
+    name:           Mapped[str]            = mapped_column(String, nullable=False)
+    category:       Mapped[Optional[str]]  = mapped_column(String)
+    subject:        Mapped[Optional[str]]  = mapped_column(String)
+    effective_date: Mapped[Optional[str]]  = mapped_column(String)
+    law_url:        Mapped[Optional[str]]  = mapped_column(String)
+    created_at:     Mapped[datetime]       = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class LegalPrecedent(Base):
+    __tablename__ = "legal_precedents"
+
+    id:              Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_number:     Mapped[str]            = mapped_column(String, unique=True, nullable=False)
+    case_name:       Mapped[Optional[str]]  = mapped_column(String)
+    court:           Mapped[Optional[str]]  = mapped_column(String, default="대법원")
+    decision_date:   Mapped[Optional[str]]  = mapped_column(String)
+    verdict_summary: Mapped[Optional[str]]  = mapped_column(Text)
+    holding:         Mapped[Optional[str]]  = mapped_column(Text)
+    serial_number:   Mapped[Optional[str]]  = mapped_column(String)
+    subject:         Mapped[Optional[str]]  = mapped_column(String)
+    source_url:      Mapped[Optional[str]]  = mapped_column(String)
+    created_at:      Mapped[datetime]       = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

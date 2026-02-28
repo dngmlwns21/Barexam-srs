@@ -1,9 +1,8 @@
-"""dictionary.py — Mini Legal Dictionary: DB-first citation lookup + law.go.kr fallback."""
+"""dictionary.py — Mini Legal Dictionary: DB-first statute/precedent lookup + law.go.kr fallback."""
 from __future__ import annotations
 
 import logging
 import os
-import re
 from typing import List, Optional
 
 import httpx
@@ -13,114 +12,140 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..dependencies import get_db
-from ..models import Choice, Question
+from ..models import LawStatute, LegalPrecedent
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-LAW_API_KEY = os.getenv("LAW_API_KEY", "")  # optional — register at open.law.go.kr
+LAW_API_KEY = os.getenv("LAW_API_KEY", "")
 
 
 class DictResult(BaseModel):
-    type:    str             # 'statute' | 'precedent' | 'card'
+    type:    str             # 'statute' | 'precedent'
     title:   str
     snippet: str
     url:     Optional[str] = None
     date:    Optional[str] = None
+    subject: Optional[str] = None
 
 
 @router.get("/search", response_model=List[DictResult])
 async def dictionary_search(
     q: str = Query(..., min_length=1, max_length=300),
+    type: str = Query("all", regex="^(all|statute|precedent)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Search Korean legal citations.
-    Priority: 1) our own flashcard DB  2) law.go.kr open API (if key set)  3) scrape fallback.
+    Search Korean legal statutes and precedents.
+    Priority: 1) law_statutes / legal_precedents DB  2) law.go.kr open API (fallback + cache)
+    type: 'all' | 'statute' | 'precedent'
     """
     results: List[DictResult] = []
 
-    # ── 1. Search our own DB ──────────────────────────────────────────────────
-    db_results = await _search_db(db, q)
-    results.extend(db_results)
+    # ── 1. DB search ──────────────────────────────────────────────────────────
+    if type in ("all", "statute"):
+        results.extend(await _search_statutes_db(db, q))
+    if type in ("all", "precedent"):
+        results.extend(await _search_precedents_db(db, q))
 
-    # ── 2. External: law.go.kr (statutes + precedents) ────────────────────────
-    if len(results) < 8:
+    # ── 2. Fallback to law.go.kr if DB returned nothing ──────────────────────
+    if not results:
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-                ext = await _search_law_go_kr(client, q)
-                # Deduplicate by title
-                existing_titles = {r.title for r in results}
-                results.extend(r for r in ext if r.title not in existing_titles)
+                if type in ("all", "statute"):
+                    ext_statutes = await _statute_search_api(client, q)
+                    # Cache results to DB
+                    for s in ext_statutes:
+                        await _cache_statute(db, s)
+                    results.extend(ext_statutes)
+                if type in ("all", "precedent"):
+                    ext_precs = await _precedent_search_api(client, q)
+                    for p in ext_precs:
+                        await _cache_precedent(db, p)
+                    results.extend(ext_precs)
+            try:
+                await db.commit()
+            except Exception:
+                await db.rollback()
         except Exception as exc:
             log.warning("External law search failed: %s", exc)
 
-    return results[:10] if results else [
-        DictResult(type="card", title="검색 결과 없음",
-                   snippet=f"'{q}'에 대한 법령·판례 정보를 찾을 수 없습니다.")
+    if not results:
+        return [DictResult(
+            type="statute",
+            title="검색 결과 없음",
+            snippet=f"'{q}'에 대한 법령·판례 정보를 찾을 수 없습니다.",
+        )]
+
+    return results[:10]
+
+
+@router.get("/laws", response_model=List[DictResult])
+async def list_laws(db: AsyncSession = Depends(get_db)):
+    """Return all law_statutes grouped (flat list, ordered by subject then name)."""
+    rows = await db.execute(
+        select(LawStatute).order_by(LawStatute.subject, LawStatute.name)
+    )
+    return [
+        DictResult(
+            type="statute",
+            title=row.name,
+            snippet=f"{row.category or ''} · 시행 {row.effective_date or ''}".strip(" ·"),
+            url=row.law_url,
+            subject=row.subject,
+        )
+        for row in rows.scalars().all()
     ]
 
 
-# ── DB search ─────────────────────────────────────────────────────────────────
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
-async def _search_db(db: AsyncSession, q: str) -> List[DictResult]:
-    """Search legal_basis / case_citation / explanation_core in choices + questions."""
-    results: List[DictResult] = []
+async def _search_statutes_db(db: AsyncSession, q: str) -> List[DictResult]:
     term = f"%{q}%"
+    rows = await db.execute(
+        select(LawStatute).where(LawStatute.name.ilike(term)).limit(5)
+    )
+    return [
+        DictResult(
+            type="statute",
+            title=row.name,
+            snippet=f"{row.category or ''} · 시행 {row.effective_date or ''}".strip(" ·"),
+            url=row.law_url,
+            date=row.effective_date,
+            subject=row.subject,
+        )
+        for row in rows.scalars().all()
+    ]
 
-    # Search choices
-    choice_res = await db.execute(
-        select(Choice).where(
+
+async def _search_precedents_db(db: AsyncSession, q: str) -> List[DictResult]:
+    term = f"%{q}%"
+    rows = await db.execute(
+        select(LegalPrecedent).where(
             or_(
-                Choice.legal_basis.ilike(term),
-                Choice.case_citation.ilike(term),
-                Choice.explanation_core.ilike(term),
-                Choice.content.ilike(term),
+                LegalPrecedent.case_number.ilike(term),
+                LegalPrecedent.case_name.ilike(term),
+                LegalPrecedent.holding.ilike(term),
+                LegalPrecedent.verdict_summary.ilike(term),
             )
         ).limit(5)
     )
-    for c in choice_res.scalars().all():
-        title = c.legal_basis or c.case_citation or c.content[:60]
-        snippet = c.explanation_core or c.explanation or c.content
-        results.append(DictResult(
-            type="card",
-            title=title,
-            snippet=snippet[:250] if snippet else "",
-        ))
-
-    # Search questions
-    q_res = await db.execute(
-        select(Question).where(
-            or_(
-                Question.legal_basis.ilike(term),
-                Question.case_citation.ilike(term),
-                Question.explanation_core.ilike(term),
-                Question.overall_explanation.ilike(term),
-            )
-        ).limit(3)
-    )
-    for qobj in q_res.scalars().all():
-        if qobj.legal_basis or qobj.case_citation:
-            title = qobj.legal_basis or qobj.case_citation or ""
-            results.append(DictResult(
-                type="statute" if qobj.legal_basis else "precedent",
-                title=title,
-                snippet=(qobj.explanation_core or qobj.overall_explanation or "")[:250],
-            ))
-
-    return results
+    return [
+        DictResult(
+            type="precedent",
+            title=row.case_number + (f" {row.case_name}" if row.case_name else ""),
+            snippet=(row.holding or row.verdict_summary or "")[:250],
+            url=row.source_url,
+            date=row.decision_date,
+            subject=row.subject,
+        )
+        for row in rows.scalars().all()
+    ]
 
 
-# ── law.go.kr external search ─────────────────────────────────────────────────
+# ── law.go.kr API helpers ─────────────────────────────────────────────────────
 
-async def _search_law_go_kr(client: httpx.AsyncClient, q: str) -> List[DictResult]:
-    results: List[DictResult] = []
-    results.extend(await _statute_search(client, q))
-    results.extend(await _precedent_search(client, q))
-    return results
-
-
-async def _statute_search(client: httpx.AsyncClient, q: str) -> List[DictResult]:
+async def _statute_search_api(client: httpx.AsyncClient, q: str) -> List[DictResult]:
     results: List[DictResult] = []
     try:
         params = {
@@ -150,7 +175,7 @@ async def _statute_search(client: httpx.AsyncClient, q: str) -> List[DictResult]
     return results
 
 
-async def _precedent_search(client: httpx.AsyncClient, q: str) -> List[DictResult]:
+async def _precedent_search_api(client: httpx.AsyncClient, q: str) -> List[DictResult]:
     results: List[DictResult] = []
     try:
         params = {
@@ -180,3 +205,44 @@ async def _precedent_search(client: httpx.AsyncClient, q: str) -> List[DictResul
     except Exception as exc:
         log.debug("Precedent API error: %s", exc)
     return results
+
+
+# ── DB cache writers ──────────────────────────────────────────────────────────
+
+async def _cache_statute(db: AsyncSession, result: DictResult) -> None:
+    """Insert statute into DB if not already present (best-effort)."""
+    try:
+        existing = await db.execute(
+            select(LawStatute).where(LawStatute.name == result.title).limit(1)
+        )
+        if existing.scalars().first():
+            return
+        law_id = result.title.replace(" ", "_")
+        db.add(LawStatute(
+            law_id=law_id,
+            name=result.title,
+            effective_date=result.date,
+            law_url=result.url,
+        ))
+    except Exception as exc:
+        log.debug("Cache statute failed: %s", exc)
+
+
+async def _cache_precedent(db: AsyncSession, result: DictResult) -> None:
+    """Insert precedent into DB if not already present (best-effort)."""
+    try:
+        case_number = result.title.split(" ")[0] if result.title else result.title
+        existing = await db.execute(
+            select(LegalPrecedent).where(LegalPrecedent.case_number == case_number).limit(1)
+        )
+        if existing.scalars().first():
+            return
+        db.add(LegalPrecedent(
+            case_number=case_number,
+            case_name=result.title,
+            decision_date=result.date,
+            holding=result.snippet or None,
+            source_url=result.url,
+        ))
+    except Exception as exc:
+        log.debug("Cache precedent failed: %s", exc)

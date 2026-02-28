@@ -39,9 +39,9 @@ log = logging.getLogger(__name__)
 
 MODEL       = "gemini-2.0-flash"
 MAX_TOKENS  = 4096
-CONCURRENCY = 1      # free-tier rate limit: 1 concurrent request
+CONCURRENCY = 20     # paid tier: 1000 QPM → 20 concurrent is safe
 RETRY_LIMIT = 5
-RETRY_DELAY = 15.0   # base wait on 429 (doubles each retry: 15s, 30s, 60s…)
+RETRY_DELAY = 10.0   # base wait on 429 (doubles each retry: 10s, 20s, 40s…)
 
 # ── Tool schema ───────────────────────────────────────────────────────────────
 
@@ -201,6 +201,7 @@ class MCQTransformer:
                         log.error("%s: zero valid OX statements", q.raw_id)
                         return None
 
+                    log.info("  ✓ %s → %d statements", q.raw_id, len(ox_list))
                     return TransformedQuestion(
                         source=q.source,
                         raw_id=q.raw_id,
@@ -230,9 +231,12 @@ class MCQTransformer:
         questions: List[RawQuestion],
         checkpoint_path: Optional[Path] = None,
     ) -> List[TransformedQuestion]:
+        tasks = [self.transform_question(q) for q in questions]
+        results_raw = await asyncio.gather(*tasks, return_exceptions=True)
         results = []
-        for q in questions:
-            res = await self.transform_question(q)
-            if res:
-                results.append(res)
+        for r in results_raw:
+            if isinstance(r, TransformedQuestion):
+                results.append(r)
+            elif isinstance(r, Exception):
+                log.error("Batch task exception: %s", r)
         return results

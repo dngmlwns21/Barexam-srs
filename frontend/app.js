@@ -79,7 +79,9 @@ async function performDictSearch(q) {
   if (!resultsEl) return;
   resultsEl.innerHTML = '<div class="dict-loading">🔍 검색 중…</div>';
   try {
-    const data = await api.get(`/dictionary/search?q=${encodeURIComponent(q)}`);
+    const data = await api.get(
+      `/dictionary/search?q=${encodeURIComponent(q)}&type=${S.dictType}`
+    );
     if (!data || data.length === 0) {
       resultsEl.innerHTML = '<div class="dict-empty">검색 결과가 없습니다.</div>';
       return;
@@ -87,8 +89,9 @@ async function performDictSearch(q) {
     resultsEl.innerHTML = data.map(item => `
       <div class="dict-result-item">
         <div class="dict-result-type ${esc(item.type)}">${
-          item.type === 'statute' ? '📖 법령' : item.type === 'precedent' ? '⚖️ 판례' : '🗂 카드'
+          item.type === 'statute' ? '📖 법령' : '⚖️ 판례'
         }</div>
+        ${item.subject ? `<div class="dict-result-subject">${esc(item.subject)}</div>` : ''}
         <div class="dict-result-title">${esc(item.title)}</div>
         ${item.snippet ? `<div class="dict-result-snippet">${esc(item.snippet)}</div>` : ''}
         ${item.date ? `<div class="dict-result-snippet">시행일: ${esc(item.date)}</div>` : ''}
@@ -227,6 +230,8 @@ const S = {
   historySubjectId: null,
   // weekly stats
   weeklyStats:    null,
+  // mini dict type filter
+  dictType:       'all',  // 'all' | 'statute' | 'precedent'
 };
 
 // ── Escape / format helpers ───────────────────────────────────────────────────
@@ -2451,6 +2456,11 @@ function _startMockTimer() {
              autocomplete="off" autocorrect="off" spellcheck="false" />
       <button id="mini-dict-search-btn" class="mini-dict-search-btn">검색</button>
     </div>
+    <div class="dict-type-tabs">
+      <button class="dict-tab active" data-type="all">전체</button>
+      <button class="dict-tab" data-type="statute">📖 법령</button>
+      <button class="dict-tab" data-type="precedent">⚖️ 판례</button>
+    </div>
     <div id="mini-dict-results" class="mini-dict-results">
       <div class="dict-empty">검색어를 입력하세요</div>
     </div>
@@ -2472,6 +2482,16 @@ function _startMockTimer() {
   });
   document.getElementById('mini-dict-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') performDictSearch(document.getElementById('mini-dict-input').value);
+  });
+  // Dict type tabs
+  _dictPanel.querySelectorAll('.dict-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      S.dictType = btn.dataset.type;
+      _dictPanel.querySelectorAll('.dict-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const currentQ = document.getElementById('mini-dict-input')?.value || '';
+      if (currentQ.trim()) performDictSearch(currentQ);
+    });
   });
   // Close on outside click
   _dictPanel.addEventListener('click', e => { if (e.target === _dictPanel) closeMiniDict(); });
