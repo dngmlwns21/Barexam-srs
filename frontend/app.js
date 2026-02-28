@@ -2310,3 +2310,4 @@ function _startMockTimer() {
   } else {
     showLogin();
   }
+})();
