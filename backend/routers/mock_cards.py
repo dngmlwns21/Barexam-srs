@@ -104,37 +104,61 @@ async def get_mock_cards(
     db: AsyncSession = Depends(get_db),
 ):
     """Return flat list of OX statements from the database."""
-    sql = text("""
-        SELECT
-            q.id          AS question_id,
-            s.name        AS subject,
-            q.source_year AS year,
-            q.exam_type   AS source,
-            q.question_number,
-            q.stem,
-            q.overall_explanation,
-            q.is_outdated,
-            c.choice_number,
-            c.content     AS statement,
-            c.is_correct,
-            c.legal_basis,
-            c.case_citation,
-            c.explanation_core,
-            c.keywords,
-            c.explanation
-        FROM choices c
-        JOIN questions q ON q.id = c.question_id
-        JOIN subjects  s ON s.id = q.subject_id
-        WHERE c.choice_number >= :min_num
-          AND (:subject IS NULL OR s.name = :subject)
-        ORDER BY q.source_year, q.question_number, c.choice_number
-        LIMIT :limit
-    """)
-    rows = (await db.execute(sql, {
-        "min_num": _OX_MIN_NUM,
-        "subject": subject,
-        "limit": limit,
-    })).fetchall()
+    if subject:
+        sql = text("""
+            SELECT
+                q.id          AS question_id,
+                s.name        AS subject,
+                q.source_year AS year,
+                q.exam_type   AS source,
+                q.question_number,
+                q.stem,
+                q.overall_explanation,
+                q.is_outdated,
+                c.choice_number,
+                c.content     AS statement,
+                c.is_correct,
+                c.legal_basis,
+                c.case_citation,
+                c.explanation_core,
+                c.keywords,
+                c.explanation
+            FROM choices c
+            JOIN questions q ON q.id = c.question_id
+            JOIN subjects  s ON s.id = q.subject_id
+            WHERE c.choice_number >= :min_num
+              AND s.name = :subject
+            ORDER BY q.source_year, q.question_number, c.choice_number
+            LIMIT :limit
+        """)
+        rows = (await db.execute(sql, {"min_num": _OX_MIN_NUM, "subject": subject, "limit": limit})).fetchall()
+    else:
+        sql = text("""
+            SELECT
+                q.id          AS question_id,
+                s.name        AS subject,
+                q.source_year AS year,
+                q.exam_type   AS source,
+                q.question_number,
+                q.stem,
+                q.overall_explanation,
+                q.is_outdated,
+                c.choice_number,
+                c.content     AS statement,
+                c.is_correct,
+                c.legal_basis,
+                c.case_citation,
+                c.explanation_core,
+                c.keywords,
+                c.explanation
+            FROM choices c
+            JOIN questions q ON q.id = c.question_id
+            JOIN subjects  s ON s.id = q.subject_id
+            WHERE c.choice_number >= :min_num
+            ORDER BY q.source_year, q.question_number, c.choice_number
+            LIMIT :limit
+        """)
+        rows = (await db.execute(sql, {"min_num": _OX_MIN_NUM, "limit": limit})).fetchall()
 
     result = []
     for r in rows:
@@ -182,7 +206,12 @@ async def get_mock_test(
     """Return random OX cards for a mock test."""
     q = (
         select(Choice)
-        .options(joinedload(Choice.question).joinedload(Question.subject))
+        .options(
+            joinedload(Choice.question)
+            .joinedload(Question.subject),
+            joinedload(Choice.question)
+            .joinedload(Question.choices),
+        )
         .where(Choice.choice_number >= _OX_MIN_NUM)
         .order_by(func.random())
         .limit(num_cards)
