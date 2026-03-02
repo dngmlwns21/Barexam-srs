@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import xml.etree.ElementTree as ET
 from typing import List, Optional
 
 import httpx
@@ -13,7 +14,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..dependencies import get_db
-from ..models import LawStatute, LegalPrecedent
+from ..models import Choice, LawStatute, LegalPrecedent, Question, Subject
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,7 +37,7 @@ class DictResult(BaseModel):
 @router.get("/search", response_model=List[DictResult])
 async def dictionary_search(
     q: str = Query(..., min_length=1, max_length=300),
-    type: str = Query("all", regex="^(all|statute|precedent)$"),
+    type: str = Query("all", pattern="^(all|statute|precedent)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -46,19 +47,25 @@ async def dictionary_search(
     """
     results: List[DictResult] = []
 
-    # ── 1. DB search ──────────────────────────────────────────────────────────
+    # ── 1. DB search (law_statutes / legal_precedents) ────────────────────────
     if type in ("all", "statute"):
         results.extend(await _search_statutes_db(db, q))
     if type in ("all", "precedent"):
         results.extend(await _search_precedents_db(db, q))
 
-    # ── 2. Fallback to law.go.kr if DB returned nothing ──────────────────────
+    # ── 2. OX 카드에서 법령/판례 근거 검색 ────────────────────────────────────
+    # choices 테이블의 legal_basis·case_citation·keywords에서 검색
+    if type in ("all", "statute"):
+        results.extend(await _search_choices_legal_basis(db, q))
+    if type in ("all", "precedent"):
+        results.extend(await _search_choices_case_citation(db, q))
+
+    # ── 3. Fallback to law.go.kr if still no results ─────────────────────────
     if not results:
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 if type in ("all", "statute"):
                     ext_statutes = await _statute_search_api(client, q)
-                    # Cache results to DB
                     for s in ext_statutes:
                         await _cache_statute(db, s)
                     results.extend(ext_statutes)
@@ -81,7 +88,15 @@ async def dictionary_search(
             snippet=f"'{q}'에 대한 법령·판례 정보를 찾을 수 없습니다.",
         )]
 
-    return results[:10]
+    # 중복 제목 제거 후 반환
+    seen_titles: set = set()
+    deduped: List[DictResult] = []
+    for r in results:
+        key = (r.type, r.title[:40])
+        if key not in seen_titles:
+            seen_titles.add(key)
+            deduped.append(r)
+    return deduped[:10]
 
 
 @router.get("/laws", response_model=List[DictResult])
@@ -199,10 +214,157 @@ async def _search_precedents_db(db: AsyncSession, q: str) -> List[DictResult]:
     ]
 
 
+# ── Choices-based search helpers ─────────────────────────────────────────────
+
+async def _search_choices_legal_basis(db: AsyncSession, q: str) -> List[DictResult]:
+    """choices.legal_basis에서 법령 근거를 검색해 DictResult로 반환."""
+    term = f"%{q}%"
+    rows = await db.execute(
+        select(
+            Choice.legal_basis,
+            Choice.content,
+            Subject.name.label("subject_name"),
+        )
+        .join(Question, Choice.question_id == Question.id)
+        .join(Subject, Question.subject_id == Subject.id)
+        .where(
+            Choice.legal_basis.isnot(None),
+            Choice.legal_basis != "",
+            Choice.legal_basis.ilike(term),
+            Choice.choice_number >= 101,
+        )
+        .order_by(func.length(Choice.legal_basis).asc())
+        .limit(5)
+    )
+    seen: set = set()
+    results: List[DictResult] = []
+    for row in rows.all():
+        lb = row.legal_basis or ""
+        if lb in seen:
+            continue
+        seen.add(lb)
+        results.append(DictResult(
+            type="statute",
+            title=lb,
+            snippet=f"OX 지문 근거 — {(row.content or '')[:100]}",
+            subject=row.subject_name,
+        ))
+    return results
+
+
+async def _search_choices_case_citation(db: AsyncSession, q: str) -> List[DictResult]:
+    """choices.case_citation에서 판례 인용을 검색해 DictResult로 반환."""
+    term = f"%{q}%"
+    rows = await db.execute(
+        select(
+            Choice.case_citation,
+            Choice.content,
+            Subject.name.label("subject_name"),
+        )
+        .join(Question, Choice.question_id == Question.id)
+        .join(Subject, Question.subject_id == Subject.id)
+        .where(
+            Choice.case_citation.isnot(None),
+            Choice.case_citation != "",
+            Choice.case_citation.ilike(term),
+            Choice.choice_number >= 101,
+        )
+        .limit(5)
+    )
+    seen: set = set()
+    results: List[DictResult] = []
+    for row in rows.all():
+        cc = row.case_citation or ""
+        if cc in seen:
+            continue
+        seen.add(cc)
+        results.append(DictResult(
+            type="precedent",
+            title=cc[:80],
+            snippet=f"OX 지문 인용 — {(row.content or '')[:100]}",
+            subject=row.subject_name,
+        ))
+    return results
+
+
 # ── law.go.kr API helpers ─────────────────────────────────────────────────────
 
-async def _statute_search_api(client: httpx.AsyncClient, q: str) -> List[DictResult]:
+def _parse_law_json(data: dict) -> List[DictResult]:
     results: List[DictResult] = []
+    for item in (data.get("LawSearch") or {}).get("law") or []:
+        name = item.get("법령명한글") or item.get("법령명", "")
+        if not name:
+            continue
+        results.append(DictResult(
+            type="statute",
+            title=name,
+            snippet=f"{item.get('법령구분명', '')} · 시행 {item.get('시행일자', '')}".strip(" ·"),
+            url=f"https://www.law.go.kr/법령/{name}",
+            date=item.get("시행일자"),
+        ))
+    return results
+
+
+def _parse_law_xml(xml_text: str) -> List[DictResult]:
+    results: List[DictResult] = []
+    try:
+        root = ET.fromstring(xml_text)
+        for law in root.iter("law"):
+            name = (law.findtext("법령명한글") or law.findtext("법령명") or "").strip()
+            if not name:
+                continue
+            results.append(DictResult(
+                type="statute",
+                title=name,
+                snippet=f"{law.findtext('법령구분명') or ''} · 시행 {law.findtext('시행일자') or ''}".strip(" ·"),
+                url=f"https://www.law.go.kr/법령/{name}",
+                date=law.findtext("시행일자"),
+            ))
+    except ET.ParseError:
+        pass
+    return results
+
+
+def _parse_prec_json(data: dict) -> List[DictResult]:
+    results: List[DictResult] = []
+    for item in (data.get("PrecSearch") or {}).get("prec") or []:
+        case_name = item.get("사건명", "")
+        판시사항 = item.get("판시사항", "")
+        serial = item.get("판례정보일련번호", "")
+        if not case_name:
+            continue
+        results.append(DictResult(
+            type="precedent",
+            title=case_name,
+            snippet=판시사항[:250] if 판시사항 else "",
+            url=f"https://www.law.go.kr/판례/{serial}" if serial else None,
+            date=item.get("선고일자"),
+        ))
+    return results
+
+
+def _parse_prec_xml(xml_text: str) -> List[DictResult]:
+    results: List[DictResult] = []
+    try:
+        root = ET.fromstring(xml_text)
+        for prec in root.iter("prec"):
+            case_name = (prec.findtext("사건명") or "").strip()
+            if not case_name:
+                continue
+            serial = prec.findtext("판례정보일련번호") or ""
+            results.append(DictResult(
+                type="precedent",
+                title=case_name,
+                snippet=(prec.findtext("판시사항") or "")[:250],
+                url=f"https://www.law.go.kr/판례/{serial}" if serial else None,
+                date=prec.findtext("선고일자"),
+            ))
+    except ET.ParseError:
+        pass
+    return results
+
+
+async def _statute_search_api(client: httpx.AsyncClient, q: str) -> List[DictResult]:
     try:
         params = {
             "OC": LAW_API_KEY or "openapi",
@@ -213,26 +375,22 @@ async def _statute_search_api(client: httpx.AsyncClient, q: str) -> List[DictRes
             "page": 1,
         }
         r = await client.get("https://www.law.go.kr/DRF/lawSearch.do", params=params)
-        if r.status_code == 200:
-            data = r.json()
-            for item in (data.get("LawSearch") or {}).get("law") or []:
-                name = item.get("법령명한글", "")
-                if not name:
-                    continue
-                results.append(DictResult(
-                    type="statute",
-                    title=name,
-                    snippet=f"{item.get('법령구분명', '')} · 시행 {item.get('시행일자', '')}",
-                    url=f"https://www.law.go.kr/법령/{name}",
-                    date=item.get("시행일자"),
-                ))
+        if r.status_code != 200:
+            return []
+        content_type = r.headers.get("content-type", "")
+        if "json" in content_type:
+            return _parse_law_json(r.json())
+        # JSON 파싱 시도 후 실패하면 XML 폴백
+        try:
+            return _parse_law_json(r.json())
+        except Exception:
+            return _parse_law_xml(r.text)
     except Exception as exc:
         log.debug("Statute API error: %s", exc)
-    return results
+    return []
 
 
 async def _precedent_search_api(client: httpx.AsyncClient, q: str) -> List[DictResult]:
-    results: List[DictResult] = []
     try:
         params = {
             "OC": LAW_API_KEY or "openapi",
@@ -243,24 +401,15 @@ async def _precedent_search_api(client: httpx.AsyncClient, q: str) -> List[DictR
             "page": 1,
         }
         r = await client.get("https://www.law.go.kr/DRF/lawSearch.do", params=params)
-        if r.status_code == 200:
-            data = r.json()
-            for item in (data.get("PrecSearch") or {}).get("prec") or []:
-                case_name = item.get("사건명", "")
-                판시사항 = item.get("판시사항", "")
-                serial = item.get("판례정보일련번호", "")
-                if not case_name:
-                    continue
-                results.append(DictResult(
-                    type="precedent",
-                    title=case_name,
-                    snippet=판시사항[:250] if 판시사항 else "",
-                    url=f"https://www.law.go.kr/판례/{serial}" if serial else None,
-                    date=item.get("선고일자"),
-                ))
+        if r.status_code != 200:
+            return []
+        try:
+            return _parse_prec_json(r.json())
+        except Exception:
+            return _parse_prec_xml(r.text)
     except Exception as exc:
         log.debug("Precedent API error: %s", exc)
-    return results
+    return []
 
 
 # ── DB cache writers ──────────────────────────────────────────────────────────

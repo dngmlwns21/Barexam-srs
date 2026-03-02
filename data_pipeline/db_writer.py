@@ -134,18 +134,69 @@ class SRSWriter:
         user_ids = [str(r["id"]) for r in user_rows]
         subject_names = sorted({q.subject for q in questions})
         subject_map = await upsert_subjects(conn, subject_names)
-        
+
+        # ── Batch build all rows in-memory ────────────────────────────────────
+        q_rows, c_rows, fc_rows, up_rows = [], [], [], []
+        # Fetch already-existing question IDs to avoid duplicates
+        existing_q_ids = {str(r["id"]) for r in await conn.fetch("SELECT id FROM questions")}
+        existing_c_keys = {(str(r["question_id"]), r["choice_number"]) for r in await conn.fetch("SELECT question_id, choice_number FROM choices")}
+        existing_fc_keys = {(str(r["question_id"]), str(r["choice_id"]) if r["choice_id"] else None) for r in await conn.fetch("SELECT question_id, choice_id FROM flashcards")}
+        existing_up_keys = {(str(r["user_id"]), str(r["flashcard_id"])) for r in await conn.fetch("SELECT user_id, flashcard_id FROM user_progress")}
+
         stats = {"questions": 0, "flashcards": 0}
         for tq in questions:
             sid = subject_map.get(tq.subject)
             if not sid: continue
-            q_id, _ = await upsert_question(conn, tq, sid)
-            ox_map = await upsert_ox_choices(conn, q_id, tq)
-            for c_id in ox_map.values():
-                fc_id, is_new = await upsert_flashcard(conn, q_id, c_id, "choice_ox")
-                if is_new:
-                    stats["flashcards"] += 1
-                    for uid in user_ids:
-                        await conn.execute("INSERT INTO user_progress (id, user_id, flashcard_id, ease_factor, interval_days, repetitions, card_state) VALUES ($1, $2, $3, 2.5, 0, 0, 'new') ON CONFLICT DO NOTHING", str(uuid.uuid4()), uid, fc_id)
-            stats["questions"] += 1
+            q_id = _q_uuid(tq.raw_id)
+            exam_type = _exam_type(tq.source)
+            source_name = str(tq.exam_session) if tq.exam_session is not None else (f"{tq.year}_{tq.month}" if tq.year else None)
+
+            if q_id not in existing_q_ids:
+                q_rows.append((q_id, sid, exam_type, tq.year, source_name, tq.question_number, tq.stem, tq.correct_choice, tq.overall_explanation, tq.tags, tq.is_outdated, tq.needs_revision))
+                existing_q_ids.add(q_id)
+                stats["questions"] += 1
+            else:
+                # Update overall_explanation for existing questions
+                await conn.execute("UPDATE questions SET overall_explanation=$2 WHERE id=$1", q_id, tq.overall_explanation)
+
+            for stmt in tq.ox_statements:
+                c_num = _choice_number(stmt.letter)
+                key = (q_id, c_num)
+                if key not in existing_c_keys:
+                    c_id = str(uuid.uuid4())
+                    c_rows.append((c_id, q_id, c_num, stmt.statement, stmt.is_correct, stmt.legal_basis, stmt.case_citation, stmt.explanation_core, json.dumps(stmt.keywords), stmt.explanation))
+                    existing_c_keys.add(key)
+                    fc_key = (q_id, c_id)
+                    if fc_key not in existing_fc_keys:
+                        fc_id = str(uuid.uuid4())
+                        fc_rows.append((fc_id, q_id, c_id, "choice_ox"))
+                        existing_fc_keys.add(fc_key)
+                        stats["flashcards"] += 1
+                        for uid in user_ids:
+                            if (uid, fc_id) not in existing_up_keys:
+                                up_rows.append((str(uuid.uuid4()), uid, fc_id))
+                                existing_up_keys.add((uid, fc_id))
+
+        # ── Bulk insert with executemany ───────────────────────────────────────
+        if q_rows:
+            await conn.executemany(
+                "INSERT INTO questions (id,subject_id,exam_type,source_year,source_name,question_number,stem,correct_choice,overall_explanation,tags,is_outdated,needs_revision) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING",
+                q_rows)
+            log.info("  Inserted %d questions", len(q_rows))
+        if c_rows:
+            await conn.executemany(
+                "INSERT INTO choices (id,question_id,choice_number,content,is_correct,legal_basis,case_citation,explanation_core,keywords,explanation) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING",
+                c_rows)
+            log.info("  Inserted %d choices", len(c_rows))
+        if fc_rows:
+            await conn.executemany(
+                "INSERT INTO flashcards (id,question_id,choice_id,type) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+                fc_rows)
+            log.info("  Inserted %d flashcards", len(fc_rows))
+        if up_rows:
+            await conn.executemany(
+                "INSERT INTO user_progress (id,user_id,flashcard_id,ease_factor,interval_days,repetitions,card_state) VALUES ($1,$2,$3,2.5,0,0,'new') ON CONFLICT DO NOTHING",
+                up_rows)
+            log.info("  Inserted %d user_progress rows", len(up_rows))
+
         return stats

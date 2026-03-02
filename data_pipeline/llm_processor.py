@@ -110,26 +110,29 @@ def _build_prompt(q: RawQuestion, retrieved_context: Optional[str] = None) -> st
     context_block = ""
     if retrieved_context:
         context_block = (
-            "\n**CRITICAL: You MUST use the following retrieved legal text to ground your analysis. "
-            "Do not use outside knowledge if this context is provided.**\n"
-            f"[RAG Context - Real Legal Texts]\n{retrieved_context}\n[End of RAG Context]\n"
+            "\n**중요: 아래 검색된 법령 원문을 반드시 분석의 근거로 사용하십시오. "
+            "이 문맥이 제공된 경우 외부 지식보다 이 내용을 우선합니다.**\n"
+            f"[RAG 문맥 - 실제 법령 원문]\n{retrieved_context}\n[RAG 문맥 끝]\n"
         )
 
     return (
-        f"You are an expert legal analyst. Your task is to deconstruct a Korean Bar Exam "
-        f"multiple-choice question into five separate True/False (O/X) statements and provide "
-        f"a detailed, structured analysis for each.\n"
+        f"당신은 한국 변호사시험 전문 법률 분석가입니다. "
+        f"모든 분석과 설명은 반드시 한국어로 작성하십시오.\n"
+        f"주어진 5지선다형 문제를 5개의 독립적인 O/X 지문으로 분해하고 "
+        f"각 지문에 대해 상세한 구조적 분석을 제공하십시오.\n"
         f"{context_block}\n"
-        f"**Source Question Analysis:**\n"
-        f"*   **Question Stem:** {q.stem}\n"
-        f"*   **Choices:**\n{choices_text}\n"
-        f"*   **Correct Answer:** Choice {q.correct_choice}\n\n"
-        f"**Your Task:**\n"
-        f"1. Deconstruct each choice and rephrase it as a standalone O/X statement.\n"
-        f"2. Verify if each statement is True (O) or False (X).\n"
-        f"3. Justify each statement citing legal_basis, case_citation, explanation_core, keywords.\n"
-        f"4. Grade importance (A=핵심, B=정기, C=드문).\n"
-        f"5. Submit using the submit_ox_analysis tool."
+        f"**문제 분석:**\n"
+        f"*   **문제 지문:** {q.stem}\n"
+        f"*   **선택지:**\n{choices_text}\n"
+        f"*   **정답:** {q.correct_choice}번\n\n"
+        f"**수행 과제:**\n"
+        f"1. 각 선택지를 독립적인 O/X 지문으로 재구성하십시오.\n"
+        f"2. 각 지문의 옳고 그름(O/X)을 판단하십시오.\n"
+        f"3. 관련 법령(legal_basis), 판례(case_citation), 핵심 해설(explanation_core), 키워드(keywords)를 근거로 설명하십시오.\n"
+        f"4. 중요도를 등급화하십시오 (A=핵심·반복출제, B=표준·정기출제, C=드문·가끔출제).\n"
+        f"5. overall_explanation에는 문제 전체에 대한 총평을 한국어로 작성하십시오.\n"
+        f"6. submit_ox_analysis 도구를 사용하여 결과를 제출하십시오.\n"
+        f"\n**중요: statement, explanation, explanation_core, overall_explanation 등 모든 텍스트 필드는 반드시 한국어로 작성하십시오.**"
     )
 
 

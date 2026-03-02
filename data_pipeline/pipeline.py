@@ -128,10 +128,21 @@ async def run_from_json(args: argparse.Namespace) -> None:
     log.info("Loaded %d raw questions", len(raw_questions))
 
     log.info("=== STEP 2: Check DB for already-processed questions ===")
-    db_q_ids = await _fetch_processed_ids(db_url)
-    skip_ids = {rq.raw_id for rq in raw_questions if _q_uuid(rq.raw_id) in db_q_ids}
-    to_process = [rq for rq in raw_questions if rq.raw_id not in skip_ids]
-    log.info("Already in DB: %d  |  Remaining: %d", len(skip_ids), len(to_process))
+    if getattr(args, "wipe", False):
+        conn_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        conn = await asyncpg.connect(conn_url)
+        try:
+            await conn.execute("TRUNCATE TABLE user_progress, review_logs, study_sessions, flashcards, choices, question_tags, questions, subjects CASCADE")
+            log.info("DB wiped (--wipe flag set)")
+        finally:
+            await conn.close()
+        to_process = raw_questions
+        log.info("All %d questions will be (re)processed", len(to_process))
+    else:
+        db_q_ids = await _fetch_processed_ids(db_url)
+        skip_ids = {rq.raw_id for rq in raw_questions if _q_uuid(rq.raw_id) in db_q_ids}
+        to_process = [rq for rq in raw_questions if rq.raw_id not in skip_ids]
+        log.info("Already in DB: %d  |  Remaining: %d", len(skip_ids), len(to_process))
 
     if args.limit:
         to_process = to_process[:args.limit]
@@ -222,6 +233,7 @@ def main() -> None:
     p_json.add_argument("--concurrency", type=int, default=1)
     p_json.add_argument("--output", default=None, help="Save final results to JSON")
     p_json.add_argument("--dry-run", action="store_true", help="Skip DB writes")
+    p_json.add_argument("--wipe", action="store_true", help="Truncate all tables before processing")
 
     # mock: crawl akls.kr → LLM → DB
     p_mock = sub.add_parser("mock", help="Crawl akls.kr → LLM → DB")
