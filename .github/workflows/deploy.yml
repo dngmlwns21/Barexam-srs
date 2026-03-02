@@ -17,13 +17,13 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
       - name: Build and push image
         run: |
-          gcloud builds submit \
-            --tag gcr.io/barexam-srs/gamzafactory \
-            --project barexam-srs \
-            --suppress-logs \
-            .
+          docker build -t gcr.io/barexam-srs/gamzafactory:latest .
+          docker push gcr.io/barexam-srs/gamzafactory:latest
 
       - name: Deploy to Cloud Run
         run: |
