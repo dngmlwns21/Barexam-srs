@@ -29,8 +29,18 @@ class Settings(BaseSettings):
     allowed_origins: List[str] = [
         "http://localhost:3000",
         "http://localhost:8000",
-        "https://korean-bar-exam-srs.onrender.com",
     ]
+    # Comma-separated extra origins injected at runtime (e.g. Cloud Run URL)
+    extra_allowed_origins: str = ""
+
+    @property
+    def all_allowed_origins(self) -> List[str]:
+        origins = list(self.allowed_origins)
+        if self.extra_allowed_origins:
+            origins.extend(
+                o.strip() for o in self.extra_allowed_origins.split(",") if o.strip()
+            )
+        return origins
 
     # SM-2 global defaults (overridable per user)
     sm2_hard_interval_minutes: int = 10
