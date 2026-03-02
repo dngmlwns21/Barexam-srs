@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..dependencies import get_db
@@ -18,6 +19,9 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 LAW_API_KEY = os.getenv("LAW_API_KEY", "")
+
+# Korean case number pattern: 2017다1234, 2020헌바123, etc.
+_CASE_NUM_RE = re.compile(r"^\d{4}[가-힣]+\d+")
 
 
 class DictResult(BaseModel):
@@ -102,9 +106,31 @@ async def list_laws(db: AsyncSession = Depends(get_db)):
 
 async def _search_statutes_db(db: AsyncSession, q: str) -> List[DictResult]:
     term = f"%{q}%"
+    # Try exact/prefix match first for better ranking
     rows = await db.execute(
-        select(LawStatute).where(LawStatute.name.ilike(term)).limit(5)
+        select(LawStatute)
+        .where(LawStatute.name.ilike(term))
+        .order_by(
+            # Exact match first, then prefix, then contains
+            func.length(LawStatute.name).asc()
+        )
+        .limit(7)
     )
+    results = rows.scalars().all()
+
+    # Fallback: full-text search with simple dictionary
+    if not results:
+        fts_rows = await db.execute(
+            text("""
+                SELECT * FROM law_statutes
+                WHERE to_tsvector('simple', name) @@ plainto_tsquery('simple', :q)
+                ORDER BY length(name) ASC
+                LIMIT 7
+            """),
+            {"q": q},
+        )
+        results = [LawStatute(**dict(r._mapping)) for r in fts_rows.fetchall()]
+
     return [
         DictResult(
             type="statute",
@@ -114,22 +140,52 @@ async def _search_statutes_db(db: AsyncSession, q: str) -> List[DictResult]:
             date=row.effective_date,
             subject=row.subject,
         )
-        for row in rows.scalars().all()
+        for row in results
     ]
 
 
 async def _search_precedents_db(db: AsyncSession, q: str) -> List[DictResult]:
     term = f"%{q}%"
-    rows = await db.execute(
-        select(LegalPrecedent).where(
-            or_(
-                LegalPrecedent.case_number.ilike(term),
-                LegalPrecedent.case_name.ilike(term),
-                LegalPrecedent.holding.ilike(term),
-                LegalPrecedent.verdict_summary.ilike(term),
+    is_case_num = bool(_CASE_NUM_RE.match(q.strip()))
+
+    if is_case_num:
+        # Exact case number lookup (e.g. "2017다1234")
+        rows = await db.execute(
+            select(LegalPrecedent)
+            .where(LegalPrecedent.case_number.ilike(term))
+            .limit(7)
+        )
+    else:
+        rows = await db.execute(
+            select(LegalPrecedent)
+            .where(
+                or_(
+                    LegalPrecedent.case_number.ilike(term),
+                    LegalPrecedent.case_name.ilike(term),
+                    LegalPrecedent.holding.ilike(term),
+                    LegalPrecedent.verdict_summary.ilike(term),
+                )
             )
-        ).limit(5)
-    )
+            .limit(7)
+        )
+    results = rows.scalars().all()
+
+    # Fallback: full-text search
+    if not results:
+        fts_rows = await db.execute(
+            text("""
+                SELECT * FROM legal_precedents
+                WHERE to_tsvector('simple',
+                    coalesce(case_number,'') || ' ' ||
+                    coalesce(case_name,'')   || ' ' ||
+                    coalesce(holding,'')
+                ) @@ plainto_tsquery('simple', :q)
+                LIMIT 7
+            """),
+            {"q": q},
+        )
+        results = [LegalPrecedent(**dict(r._mapping)) for r in fts_rows.fetchall()]
+
     return [
         DictResult(
             type="precedent",
@@ -139,7 +195,7 @@ async def _search_precedents_db(db: AsyncSession, q: str) -> List[DictResult]:
             date=row.decision_date,
             subject=row.subject,
         )
-        for row in rows.scalars().all()
+        for row in results
     ]
 
 

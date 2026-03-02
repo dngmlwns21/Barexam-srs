@@ -92,6 +92,18 @@ async def get_deck_stats(
     total_cards_map = {str(r.subject_id): r.cnt for r in total_cards_rows}
     grand_total_cards = sum(total_cards_map.values())
 
+    # 과목+세부분류별 전체 카드 수
+    total_subcat_q = (
+        select(Question.subject_id, Question.sub_category, func.count().label("cnt"))
+        .select_from(Question)
+        .where(Question.sub_category.isnot(None))
+        .group_by(Question.subject_id, Question.sub_category)
+    )
+    total_subcat_rows = (await db.execute(total_subcat_q)).all()
+    total_subcat_map: dict = {}
+    for r in total_subcat_rows:
+        total_subcat_map[(str(r.subject_id), r.sub_category)] = r.cnt
+
     new_today    = await queries.count_new_today(db, uid, _today_start())
     review_today = await queries.count_review_today(db, uid, _today_start())
 
@@ -115,6 +127,24 @@ async def get_deck_stats(
     lrn_map  = {str(r.subject_id): r.cnt for r in lrn_rows}
     lrn_total = sum(lrn_map.values())
 
+    # Learning by (subject_id, sub_category)
+    lrn_subcat_q = (
+        select(Question.subject_id, Question.sub_category, func.count().label("cnt"))
+        .select_from(UserProgress)
+        .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
+        .join(Question,  Question.id  == Flashcard.question_id)
+        .where(
+            UserProgress.user_id == uid,
+            UserProgress.card_state.in_(["learning", "lapsed"]),
+            UserProgress.learning_due_at <= now,
+            Question.sub_category.isnot(None),
+        )
+        .group_by(Question.subject_id, Question.sub_category)
+    )
+    lrn_subcat_map: dict = {}
+    for r in (await db.execute(lrn_subcat_q)).all():
+        lrn_subcat_map[(str(r.subject_id), r.sub_category)] = r.cnt
+
     # ── Review due — capped by daily limit ────────────────────────────────────
     review_q = (
         select(Question.subject_id, func.count().label("cnt"))
@@ -134,6 +164,24 @@ async def get_deck_stats(
     # Scale counts proportionally to daily limit
     rev_scale = (review_remaining / rev_total_raw) if rev_total_raw > review_remaining > 0 else 1.0
 
+    # Review by (subject_id, sub_category)
+    rev_subcat_q = (
+        select(Question.subject_id, Question.sub_category, func.count().label("cnt"))
+        .select_from(UserProgress)
+        .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
+        .join(Question,  Question.id  == Flashcard.question_id)
+        .where(
+            UserProgress.user_id == uid,
+            UserProgress.card_state == "review",
+            UserProgress.next_review_at <= now,
+            Question.sub_category.isnot(None),
+        )
+        .group_by(Question.subject_id, Question.sub_category)
+    )
+    rev_subcat_map: dict = {}
+    for r in (await db.execute(rev_subcat_q)).all():
+        rev_subcat_map[(str(r.subject_id), r.sub_category)] = r.cnt
+
     # ── New cards — capped by daily limit ─────────────────────────────────────
     new_q = (
         select(Question.subject_id, func.count().label("cnt"))
@@ -151,6 +199,23 @@ async def get_deck_stats(
     new_total_raw = sum(new_map.values())
     new_scale = (new_remaining / new_total_raw) if new_total_raw > new_remaining > 0 else 1.0
 
+    # New by (subject_id, sub_category)
+    new_subcat_q = (
+        select(Question.subject_id, Question.sub_category, func.count().label("cnt"))
+        .select_from(UserProgress)
+        .join(Flashcard, Flashcard.id == UserProgress.flashcard_id)
+        .join(Question,  Question.id  == Flashcard.question_id)
+        .where(
+            UserProgress.user_id == uid,
+            UserProgress.card_state == "new",
+            Question.sub_category.isnot(None),
+        )
+        .group_by(Question.subject_id, Question.sub_category)
+    )
+    new_subcat_map: dict = {}
+    for r in (await db.execute(new_subcat_q)).all():
+        new_subcat_map[(str(r.subject_id), r.sub_category)] = r.cnt
+
     # ── Fetch subjects ────────────────────────────────────────────────────────
     subj_result = await db.execute(select(Subject).order_by(Subject.sort_order, Subject.name))
     subjects    = subj_result.scalars().all()
@@ -161,13 +226,14 @@ async def get_deck_stats(
     out.append(DeckStatsOut(
         subject_id=None,
         subject_name="전체 과목",
+        sub_category=None,
         new_count=min(new_total_raw, new_remaining),
         learning_count=lrn_total,
         review_count=min(rev_total_raw, review_remaining),
         total_cards=grand_total_cards,
     ))
 
-    # Per-subject rows
+    # Per-subject rows + sub-category rows
     for subj in subjects:
         sid = str(subj.id)
         s_lrn = lrn_map.get(sid, 0)
@@ -176,10 +242,27 @@ async def get_deck_stats(
         out.append(DeckStatsOut(
             subject_id=subj.id,
             subject_name=subj.name,
+            sub_category=None,
             new_count=int(s_new * new_scale),
             learning_count=s_lrn,
             review_count=int(s_rev * rev_scale),
             total_cards=total_cards_map.get(sid, 0),
         ))
+        # Sub-category rows for this subject
+        subcats = sorted({k[1] for k in total_subcat_map if k[0] == sid})
+        for sc in subcats:
+            key = (sid, sc)
+            sc_lrn = lrn_subcat_map.get(key, 0)
+            sc_rev = rev_subcat_map.get(key, 0)
+            sc_new = new_subcat_map.get(key, 0)
+            out.append(DeckStatsOut(
+                subject_id=subj.id,
+                subject_name=subj.name,
+                sub_category=sc,
+                new_count=int(sc_new * new_scale),
+                learning_count=sc_lrn,
+                review_count=int(sc_rev * rev_scale),
+                total_cards=total_subcat_map.get(key, 0),
+            ))
 
     return out

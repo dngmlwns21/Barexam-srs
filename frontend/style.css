@@ -1799,6 +1799,43 @@ kbd {
 }
 .deck-row:last-child { border-bottom: none; }
 .deck-row:hover { background: var(--bg); }
+
+/* ── Subject group (collapsible) ────────────────────────────── */
+.deck-subject-group { border-bottom: 1px solid var(--border); }
+.deck-subject-group:last-child { border-bottom: none; }
+.deck-subject-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 18px;
+  background: rgba(20,121,252,.04);
+  cursor: pointer;
+  gap: 8px;
+  transition: background .12s;
+}
+.deck-subject-header:hover { background: rgba(20,121,252,.09); }
+body.dark-mode .deck-subject-header { background: rgba(255,255,255,.04); }
+body.dark-mode .deck-subject-header:hover { background: rgba(255,255,255,.08); }
+.deck-subject-label {
+  flex: 1;
+  font-size: .93rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.deck-chevron {
+  font-size: .75rem;
+  color: var(--text-muted);
+  transition: transform .2s;
+  flex-shrink: 0;
+}
+.deck-group-collapsed .deck-chevron { transform: rotate(-90deg); }
+.deck-group-collapsed .deck-sub-rows { display: none; }
+.deck-sub-rows { background: var(--card); }
+.deck-row.deck-row-sub {
+  padding-left: 32px;  /* indent sub-category rows */
+  font-size: .88rem;
+}
+.deck-row.deck-row-sub .deck-name { font-size: .88rem; }
+
 .deck-row.deck-row-overall {
   background: var(--primary-light);
   font-weight: 700;

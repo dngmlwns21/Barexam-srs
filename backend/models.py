@@ -128,6 +128,9 @@ class Question(Base):
 
     keywords: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
 
+    # Migration 006: sub-category within subject (e.g. 형법총론, 형법각론)
+    sub_category: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # Phase 2: Added requested fields to Question (for non-MCQ compatibility)
     legal_basis:      Mapped[Optional[str]] = mapped_column(String)
     case_citation:    Mapped[Optional[str]] = mapped_column(String)

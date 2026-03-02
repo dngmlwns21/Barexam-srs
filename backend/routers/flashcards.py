@@ -22,6 +22,7 @@ router = APIRouter()
 async def get_due_cards(
     limit:        int                  = Query(20, ge=1, le=100),
     subject_id:   Optional[uuid.UUID] = Query(None),
+    sub_category: Optional[str]       = Query(None),
     starred_only: bool                = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -45,6 +46,8 @@ async def get_due_cards(
         base.append(UserProgress.is_starred == True)  # noqa: E712
     if subject_id:
         s_filt.append(Question.subject_id == subject_id)
+    if sub_category:
+        s_filt.append(Question.sub_category == sub_category)
 
     opts = up_load_opts()
     result_rows: list = []

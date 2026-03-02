@@ -8,7 +8,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401 (Any used in dynamic SQL)
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -35,6 +35,7 @@ def _letter(choice_number: int) -> str:
 
 class DeckOut(BaseModel):
     subject: str
+    sub_category: Optional[str] = None   # e.g. '형법총론', '물권법', None if not classified
     new_count: int
     learning_count: int
     review_count: int
@@ -74,20 +75,25 @@ class MockTestCardOut(BaseModel):
 
 @router.get("/decks", response_model=List[DeckOut])
 async def get_mock_decks(db: AsyncSession = Depends(get_db)):
-    """Return per-subject OX card counts from the database."""
+    """Return per-subject/sub-category OX card counts from the database."""
     sql = text("""
-        SELECT s.name AS subject, COUNT(c.id) AS total
+        SELECT
+            s.name        AS subject,
+            q.sub_category,
+            s.sort_order,
+            COUNT(c.id)   AS total
         FROM choices c
         JOIN questions q ON q.id = c.question_id
-        JOIN subjects s ON s.id = q.subject_id
+        JOIN subjects  s ON s.id = q.subject_id
         WHERE c.choice_number >= :min_num
-        GROUP BY s.name
-        ORDER BY s.name
+        GROUP BY s.name, s.sort_order, q.sub_category
+        ORDER BY s.sort_order, s.name, q.sub_category NULLS LAST
     """)
     rows = (await db.execute(sql, {"min_num": _OX_MIN_NUM})).fetchall()
     return [
         DeckOut(
             subject=r.subject,
+            sub_category=r.sub_category,
             new_count=r.total,
             learning_count=0,
             review_count=0,
@@ -100,65 +106,48 @@ async def get_mock_decks(db: AsyncSession = Depends(get_db)):
 @router.get("/cards", response_model=List[OXCardOut])
 async def get_mock_cards(
     subject: Optional[str] = Query(None, description="Filter by subject name"),
+    sub_category: Optional[str] = Query(None, description="Filter by sub-category (e.g. 형법총론)"),
     limit: int = Query(200, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
 ):
     """Return flat list of OX statements from the database."""
+    where_clauses = ["c.choice_number >= :min_num"]
+    params: Dict[str, Any] = {"min_num": _OX_MIN_NUM, "limit": limit}
+
     if subject:
-        sql = text("""
-            SELECT
-                q.id          AS question_id,
-                s.name        AS subject,
-                q.source_year AS year,
-                q.exam_type   AS source,
-                q.question_number,
-                q.stem,
-                q.overall_explanation,
-                q.is_outdated,
-                c.choice_number,
-                c.content     AS statement,
-                c.is_correct,
-                c.legal_basis,
-                c.case_citation,
-                c.explanation_core,
-                c.keywords,
-                c.explanation
-            FROM choices c
-            JOIN questions q ON q.id = c.question_id
-            JOIN subjects  s ON s.id = q.subject_id
-            WHERE c.choice_number >= :min_num
-              AND s.name = :subject
-            ORDER BY q.source_year, q.question_number, c.choice_number
-            LIMIT :limit
-        """)
-        rows = (await db.execute(sql, {"min_num": _OX_MIN_NUM, "subject": subject, "limit": limit})).fetchall()
-    else:
-        sql = text("""
-            SELECT
-                q.id          AS question_id,
-                s.name        AS subject,
-                q.source_year AS year,
-                q.exam_type   AS source,
-                q.question_number,
-                q.stem,
-                q.overall_explanation,
-                q.is_outdated,
-                c.choice_number,
-                c.content     AS statement,
-                c.is_correct,
-                c.legal_basis,
-                c.case_citation,
-                c.explanation_core,
-                c.keywords,
-                c.explanation
-            FROM choices c
-            JOIN questions q ON q.id = c.question_id
-            JOIN subjects  s ON s.id = q.subject_id
-            WHERE c.choice_number >= :min_num
-            ORDER BY q.source_year, q.question_number, c.choice_number
-            LIMIT :limit
-        """)
-        rows = (await db.execute(sql, {"min_num": _OX_MIN_NUM, "limit": limit})).fetchall()
+        where_clauses.append("s.name = :subject")
+        params["subject"] = subject
+    if sub_category:
+        where_clauses.append("q.sub_category = :sub_category")
+        params["sub_category"] = sub_category
+
+    where_sql = " AND ".join(where_clauses)
+    sql = text(f"""
+        SELECT
+            q.id          AS question_id,
+            s.name        AS subject,
+            q.source_year AS year,
+            q.exam_type   AS source,
+            q.question_number,
+            q.stem,
+            q.overall_explanation,
+            q.is_outdated,
+            c.choice_number,
+            c.content     AS statement,
+            c.is_correct,
+            c.legal_basis,
+            c.case_citation,
+            c.explanation_core,
+            c.keywords,
+            c.explanation
+        FROM choices c
+        JOIN questions q ON q.id = c.question_id
+        JOIN subjects  s ON s.id = q.subject_id
+        WHERE {where_sql}
+        ORDER BY q.source_year, q.question_number, c.choice_number
+        LIMIT :limit
+    """)
+    rows = (await db.execute(sql, params)).fetchall()
 
     result = []
     for r in rows:

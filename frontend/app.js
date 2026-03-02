@@ -196,6 +196,7 @@ const S = {
   stats:          null,     // OverallStatsOut
   subjectStats:   [],       // SubjectStatsOut[]
   activeSubjectId: null,    // UUID string | null
+  activeSubCategory: null,  // string | null
   card:           null,     // DueCardOut (full object)
   chosen:         null,     // choice_number (int) or 'O'/'X' for choice_ox
   revealData:     null,     // { answer, explanation }
@@ -434,19 +435,19 @@ async function showHome() {
   document.getElementById('login-screen').hidden = true;
 
   try {
-    const [stats, subjStats, subjects, user, mockDecks] = await Promise.all([
+    const [stats, subjStats, subjects, user, deckStats] = await Promise.all([
       api.get('/stats/'),
       api.get('/stats/subjects'),
       api.get('/subjects/'),
       api.get('/users/me'),
-      fetch(`${API}/mock/decks`).then(r => r.json()).catch(() => []),
+      api.get('/dashboard/deck-stats').catch(() => []),
     ]);
     S.stats          = stats;
     S.subjectStats   = subjStats;
     S.subjects       = subjects;
     S.streak         = stats.study_streak;
     S.user           = user;
-    S.mockDeckStats  = mockDecks || [];
+    S.deckStats      = deckStats || [];
   } catch (err) {
     console.error(err);
     hideLoading();
@@ -475,7 +476,7 @@ ${esc(err.message)}</pre>
 }
 
 function renderHome() {
-  const { stats, streak, mockDeckStats } = S;
+  const { stats, streak, deckStats } = S;
   const total    = stats.due_today + stats.reviewed_today;
   const pct      = total > 0 ? Math.round((stats.reviewed_today / total) * 100) : 0;
 
@@ -510,11 +511,11 @@ function renderHome() {
     </div>
   `;
 
-  // OX Deck table (from mock API)
-  function deckRow(subject, n, lrn, rev, isOverall) {
+  // SRS Deck table — hierarchical: subject group → sub-category rows
+  function deckRow(label, n, lrn, rev, cls, dataAttrs) {
     return `
-      <button class="deck-row${isOverall ? ' deck-row-overall' : ''}" data-mock-subject="${esc(subject)}">
-        <span class="deck-name">${esc(subject)}</span>
+      <button class="deck-row ${cls}" ${dataAttrs}>
+        <span class="deck-name">${esc(label)}</span>
         <span class="deck-counts">
           <span class="deck-count deck-new"  title="신규">${n}</span>
           <span class="deck-count deck-learn" title="학습중">${lrn}</span>
@@ -523,23 +524,63 @@ function renderHome() {
       </button>`;
   }
 
+  // deckStats[0] = overall row, rest = per-subject + per-sub_category rows
+  const overallRow  = deckStats.find(d => !d.subject_id) || null;
+  // subject-level rows (sub_category == null, subject_id != null)
+  const subjectRows_data = deckStats.filter(d => d.subject_id && !d.sub_category);
+  // sub-category rows (both subject_id and sub_category set)
+  const subcatRows_data  = deckStats.filter(d => d.subject_id && d.sub_category);
+
   let deckSection;
-  if (mockDeckStats.length > 0) {
-    const totalNew = mockDeckStats.reduce((a, d) => a + d.new_count, 0);
-    const totalLrn = mockDeckStats.reduce((a, d) => a + d.learning_count, 0);
-    const totalRev = mockDeckStats.reduce((a, d) => a + d.review_count, 0);
+  if (deckStats.length > 0 && overallRow) {
+    let subjectRowsHtml = '';
+    for (const subj of subjectRows_data) {
+      const sid  = subj.subject_id;
+      const name = subj.subject_name;
+      const subcats = subcatRows_data.filter(r => r.subject_id === sid);
+
+      if (subcats.length > 0) {
+        subjectRowsHtml += `
+          <div class="deck-subject-group">
+            <div class="deck-subject-header" data-subject-id="${esc(sid)}">
+              <span class="deck-subject-label">${esc(name)}</span>
+              <span class="deck-counts">
+                <span class="deck-count deck-new">${subj.new_count}</span>
+                <span class="deck-count deck-learn">${subj.learning_count}</span>
+                <span class="deck-count deck-rev">${subj.review_count}</span>
+              </span>
+              <span class="deck-chevron">▾</span>
+            </div>
+            <div class="deck-sub-rows">
+              ${subcats.map(r => deckRow(
+                r.sub_category,
+                r.new_count, r.learning_count, r.review_count,
+                'deck-row-sub',
+                `data-subject-id="${esc(r.subject_id)}" data-sub-cat="${esc(r.sub_category)}"`
+              )).join('')}
+            </div>
+          </div>`;
+      } else {
+        subjectRowsHtml += deckRow(
+          name, subj.new_count, subj.learning_count, subj.review_count,
+          '', `data-subject-id="${esc(sid)}"`
+        );
+      }
+    }
+
     deckSection = `
       <div class="deck-table">
         <div class="deck-table-header">
-          <span class="deck-header-name">OX 카드</span>
+          <span class="deck-header-name">OX 카드 (SRS)</span>
           <span class="deck-header-counts">
             <span class="deck-count deck-new"  title="신규">신규</span>
             <span class="deck-count deck-learn" title="학습중">학습</span>
             <span class="deck-count deck-rev"  title="복습">복습</span>
           </span>
         </div>
-        ${deckRow('전체 OX 카드', totalNew, totalLrn, totalRev, true)}
-        ${mockDeckStats.map(d => deckRow(d.subject, d.new_count, d.learning_count, d.review_count, false)).join('')}
+        ${deckRow('전체', overallRow.new_count, overallRow.learning_count, overallRow.review_count,
+            'deck-row-overall', 'data-subject-id="__all__"')}
+        ${subjectRowsHtml}
       </div>
       <div class="deck-legend">
         <span><span class="legend-dot legend-new"></span>신규</span>
@@ -585,11 +626,26 @@ function renderHome() {
   document.getElementById('btn-logout').addEventListener('click', logout);
   document.getElementById('btn-dark-toggle-home').addEventListener('click', toggleDarkMode);
   document.getElementById('btn-mock-setup').addEventListener('click', showMockSetup);
-  document.getElementById('btn-cta')?.addEventListener('click', () => startMockStudy(null));
+  document.getElementById('btn-cta')?.addEventListener('click', () => startSRSStudy(null, null));
+
+  // Subject group header: toggle sub-rows
+  document.querySelectorAll('.deck-subject-header').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const group = hdr.closest('.deck-subject-group');
+      group.classList.toggle('deck-group-collapsed');
+    });
+  });
+
+  // Deck rows (overall + simple subject + sub-category) — SRS study mode
   document.querySelectorAll('.deck-row').forEach(btn => {
     btn.addEventListener('click', () => {
-      const subj = btn.dataset.mockSubject;
-      startMockStudy(subj === '전체 OX 카드' ? null : subj);
+      const subjectId = btn.dataset.subjectId;
+      const subCat    = btn.dataset.subCat || null;
+      if (subjectId === '__all__') {
+        startSRSStudy(null, null);
+      } else {
+        startSRSStudy(subjectId, subCat);
+      }
     });
   });
   document.querySelectorAll('.qs-mode-btn').forEach(btn => {
@@ -680,13 +736,24 @@ function renderStudyList() {
 
 // ── STUDY ─────────────────────────────────────────────────────────────────────
 async function startStudy() {
-  S.isMockMode  = false;
-  S.returnTo    = null;
-  S.sessionDone = 0;
+  S.isMockMode        = false;
+  S.returnTo          = null;
+  S.sessionDone       = 0;
+  S.activeSubjectId   = null;
+  S.activeSubCategory = null;
   await fetchNextCard();
 }
 
-async function startMockStudy(subject) {
+async function startSRSStudy(subjectId, subCategory) {
+  S.isMockMode        = false;
+  S.returnTo          = null;
+  S.sessionDone       = 0;
+  S.activeSubjectId   = subjectId || null;
+  S.activeSubCategory = subCategory || null;
+  await fetchNextCard();
+}
+
+async function startMockStudy(subject, subCategory) {
   S.isMockMode  = true;
   S.returnTo    = null;
   S.sessionDone = 0;
@@ -694,9 +761,9 @@ async function startMockStudy(subject) {
   showLoading();
   document.getElementById('login-screen').hidden = true;
   try {
-    const url = subject
-      ? `${API}/mock/cards?subject=${encodeURIComponent(subject)}&limit=500`
-      : `${API}/mock/cards?limit=500`;
+    let url = `${API}/mock/cards?limit=500`;
+    if (subject) url += `&subject=${encodeURIComponent(subject)}`;
+    if (subCategory) url += `&sub_category=${encodeURIComponent(subCategory)}`;
     const cards = await fetch(url).then(r => r.json());
     // Fisher-Yates shuffle
     for (let i = cards.length - 1; i > 0; i--) {
@@ -770,7 +837,8 @@ async function fetchNextCard() {
 
   try {
     let path = '/flashcards/due?limit=1';
-    if (S.activeSubjectId) path += `&subject_id=${encodeURIComponent(S.activeSubjectId)}`;
+    if (S.activeSubjectId)   path += `&subject_id=${encodeURIComponent(S.activeSubjectId)}`;
+    if (S.activeSubCategory) path += `&sub_category=${encodeURIComponent(S.activeSubCategory)}`;
 
     const cards = await api.get(path);
 

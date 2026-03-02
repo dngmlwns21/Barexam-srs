@@ -328,6 +328,7 @@ class DailyStatusOut(BaseModel):
 class DeckStatsOut(BaseModel):
     subject_id:     Optional[uuid.UUID]
     subject_name:   str
+    sub_category:   Optional[str] = None
     new_count:      int   # blue  — new cards available today
     learning_count: int   # red   — learning/lapsed due now
     review_count:   int   # green — review cards due today
